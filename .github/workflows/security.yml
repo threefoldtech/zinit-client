@@ -20,18 +20,10 @@ jobs:
           toolchain: stable
           override: true
       
-      - name: Install cargo-audit
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-audit
-          version: latest
-          use-tool-cache: true
-      
       - name: Run cargo-audit
-        uses: actions-rs/cargo@v1
+        uses: rustsec/audit-check@v1
         with:
-          command: audit
-          args: --deny warnings
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   cargo_deny:
     name: Cargo Deny Check
@@ -39,15 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Install cargo-deny
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-deny
-          version: latest
-          use-tool-cache: true
-      
       - name: Run cargo-deny
-        uses: actions-rs/cargo@v1
+        uses: EmbarkStudios/cargo-deny-action@v1
         with:
-          command: deny
-          args: --config deny.toml check
+          arguments: --all-features

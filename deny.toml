@@ -27,18 +27,7 @@ deny = ["GPL-1.0", "GPL-2.0", "GPL-3.0", "AGPL-1.0", "AGPL-3.0"]
 # Licenses with confidence values less than this threshold will be rejected.
 confidence-threshold = 0.8
 
-# Allow licenses that are explicitly dual-licensed
-allow-dual-license = [
-    { allow = [
-        "MIT",
-        "Apache-2.0",
-    ] },
-    { allow = [
-        "BSD-2-Clause",
-        "Apache-2.0",
-        "MIT",
-    ] },
-]
+# Dual-licensed crates are automatically handled by the license expression parsing
 
 [bans]
 # This section is considered when running `cargo deny check bans`

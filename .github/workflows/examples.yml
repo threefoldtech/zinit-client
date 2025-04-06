@@ -1,0 +1,63 @@
+name: Rust Examples
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  examples:
+    name: Build and Run Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-examples-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-examples-
+      
+      - name: Build examples
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --examples --verbose
+      
+      - name: Run basic_usage example
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --example basic_usage
+      
+      - name: Run log_streaming example
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --example log_streaming
+      
+      - name: Run service_management example
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --example service_management
+      
+      - name: Run mock_server_demo example
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --example mock_server_demo

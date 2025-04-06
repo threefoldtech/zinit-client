@@ -1,5 +1,10 @@
 # Zinit Client
 
+[![Rust CI](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml)
+[![Rust Examples](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml)
+[![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client/branch/main/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client)
+[![Security Scan](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml)
+
 A Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager.
 
 ## Features
@@ -183,3 +188,14 @@ cargo test test_client_reconnection
 
 All tests use the mock server, so they can be run without requiring a real Zinit instance. The mock server simulates a Zinit instance for testing purposes, allowing for reliable and reproducible tests.
 
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and delivery:
+
+- **Rust CI**: Builds the project, runs tests, and checks code formatting and linting
+- **Rust Examples**: Builds and runs all examples to ensure they work correctly
+- **Code Coverage**: Generates code coverage reports and uploads them to Codecov
+- **Security Scan**: Performs security audits on dependencies using cargo-audit and cargo-deny
+- **Publish**: Automatically publishes the crate to crates.io when a new release is created
+
+All workflows run on every push to any branch and on all pull requests.

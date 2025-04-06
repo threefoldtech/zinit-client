@@ -2,7 +2,7 @@
 
 [![Rust CI](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/ci.yml)
 [![Rust Examples](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/examples.yml/badge.svg)](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/examples.yml)
-[![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client-rs)
+[![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client-rs/branch/development/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client-rs)
 [![Security Scan](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/security.yml/badge.svg)](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/security.yml)
 
 A Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager.

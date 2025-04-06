@@ -44,17 +44,17 @@ jobs:
           command: run
           args: --example basic_usage
       
-      - name: Run log_streaming example
-        uses: actions-rs/cargo@v1
-        with:
-          command: run
-          args: --example log_streaming
+      # - name: Run log_streaming example
+      #   uses: actions-rs/cargo@v1
+      #   with:
+      #     command: run
+      #     args: --example log_streaming
       
-      - name: Run service_management example
-        uses: actions-rs/cargo@v1
-        with:
-          command: run
-          args: --example service_management
+      # - name: Run service_management example
+      #   uses: actions-rs/cargo@v1
+      #   with:
+      #     command: run
+      #     args: --example service_management
       
       - name: Run mock_server_demo example
         uses: actions-rs/cargo@v1

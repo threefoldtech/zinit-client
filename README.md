@@ -199,3 +199,8 @@ This project uses GitHub Actions for continuous integration and delivery:
 - **Publish**: Automatically publishes the crate to crates.io when a new release is created
 
 All workflows run on every push to any branch and on all pull requests.
+
+
+## License
+
+See [LICENSE](LICENSE) file for details.

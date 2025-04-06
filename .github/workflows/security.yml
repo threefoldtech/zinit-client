@@ -50,4 +50,4 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: deny
-          args: check
+          args: --config deny.toml check

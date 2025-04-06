@@ -1,0 +1,96 @@
+[licenses]
+# This section is considered when running `cargo deny check licenses`
+# More documentation for the licenses section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/licenses/cfg.html
+
+# The default license terms to use when a license expression cannot be parsed
+default = "deny"
+
+# Allow these license expressions, including any exceptions
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+    "MPL-2.0",
+    "0BSD",
+]
+
+# Deny these license expressions, including any exceptions
+deny = ["GPL-1.0", "GPL-2.0", "GPL-3.0", "AGPL-1.0", "AGPL-3.0"]
+
+# Specify the confidence threshold for licenses.
+# The higher the confidence, the more closely the license text must match.
+# Licenses with confidence values less than this threshold will be rejected.
+confidence-threshold = 0.8
+
+# Allow licenses that are explicitly dual-licensed
+allow-dual-license = [
+    { allow = [
+        "MIT",
+        "Apache-2.0",
+    ] },
+    { allow = [
+        "BSD-2-Clause",
+        "Apache-2.0",
+        "MIT",
+    ] },
+]
+
+[bans]
+# This section is considered when running `cargo deny check bans`
+# More documentation about the 'bans' section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
+
+# Deny specific crates
+deny = []
+
+# Warn when multiple versions of the same crate are detected
+multiple-versions = "warn"
+
+# Skip these crates when detecting multiple versions
+skip = []
+
+# Skip these specific versions when detecting multiple versions
+skip-tree = []
+
+[sources]
+# This section is considered when running `cargo deny check sources`
+# More documentation about the 'sources' section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
+
+# Allow crates from these registries
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+
+# Allow crates from git repositories hosted on these domains
+allow-git = ["github.com", "gitlab.com", "bitbucket.org"]
+
+[advisories]
+# This section is considered when running `cargo deny check advisories`
+# More documentation about the 'advisories' section can be found here:
+# https://embarkstudios.github.io/cargo-deny/checks/advisories/cfg.html
+
+# The path where the advisory database is cloned/fetched into
+db-path = "~/.cargo/advisory-db"
+
+# The URL(s) of the advisory databases to use
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+# The lint level for security vulnerabilities
+vulnerability = "deny"
+
+# The lint level for unmaintained crates
+unmaintained = "warn"
+
+# The lint level for crates that have been yanked from their source registry
+yanked = "warn"
+
+# The lint level for crates with security notices
+notice = "warn"
+
+# A list of advisory IDs to ignore. Note that ignored advisories will still
+# output a note when they are encountered.
+ignore = []

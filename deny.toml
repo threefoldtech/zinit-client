@@ -55,7 +55,11 @@ skip-tree = []
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 
 # Allow crates from git repositories hosted on these domains
-allow-git = ["github.com", "gitlab.com", "bitbucket.org"]
+allow-git = [
+    "https://github.com",
+    "https://gitlab.com",
+    "https://bitbucket.org",
+]
 
 [advisories]
 # This section is considered when running `cargo deny check advisories`

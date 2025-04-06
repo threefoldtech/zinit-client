@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 use tempfile::tempdir;
-use zinit_client::{ClientConfig, Result, ServiceState, StreamExt, ZinitClient};
+use zinit_client_rs::{ClientConfig, Result, ServiceState, StreamExt, ZinitClient};
 
 // Import the mock server
 mod mock_server;

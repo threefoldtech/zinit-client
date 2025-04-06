@@ -44,7 +44,7 @@ cargo build --examples
 ## Usage
 
 ```rust
-use zinit_client::{ZinitClient, Result};
+use zinit_client_rs::{ZinitClient, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
 You can customize the client behavior using `ClientConfig`:
 
 ```rust
-use zinit_client::{ZinitClient, ClientConfig};
+use zinit_client_rs::{ZinitClient, ClientConfig};
 use std::time::Duration;
 
 let config = ClientConfig {
@@ -134,8 +134,8 @@ Here's how to use it:
 ```rust
 use std::path::PathBuf;
 use tempfile::tempdir;
-use zinit_client::ZinitClient;
-use zinit_client::tests::MockZinitServer;
+use zinit_client_rs::ZinitClient;
+use zinit_client_rs::tests::MockZinitServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {

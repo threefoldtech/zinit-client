@@ -1,7 +1,15 @@
    # Changelog
-   
+
+   ## 0.2.0 (2023-06-15)
+
+   ### Added
+   - Renamed the client to zinit-client
+
+   ### Changed
+   - Changed the package name to zinit-client
+
    ## 0.1.0 (2023-06-15)
-   
+
    ### Added
    - Initial release
    - Complete API coverage for all Zinit operations

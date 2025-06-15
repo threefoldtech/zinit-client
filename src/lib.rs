@@ -15,7 +15,7 @@
 //! ## Usage
 //!
 //! ```rust,no_run
-//! use zinit_client_rs::{ZinitClient, Result};
+//! use zinit_client::{ZinitClient, Result};
 //! use std::collections::HashMap;
 //!
 //! #[tokio::main]
@@ -43,7 +43,7 @@
 //! You can customize the client behavior using `ClientConfig`:
 //!
 //! ```rust,no_run
-//! use zinit_client_rs::{ZinitClient, ClientConfig};
+//! use zinit_client::{ZinitClient, ClientConfig};
 //! use std::time::Duration;
 //!
 //! let config = ClientConfig {

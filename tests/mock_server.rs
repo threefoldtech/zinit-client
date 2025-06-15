@@ -371,7 +371,7 @@ mod tests {
     use std::time::Duration;
     use tempfile::tempdir;
     use tokio::time::sleep;
-    use zinit_client_rs::ZinitClient;
+    use zinit_client::ZinitClient;
 
     #[tokio::test]
     async fn test_mock_server() {

@@ -1,11 +1,11 @@
 [package]
-name = "zinit-client-rs"
+name = "zinit-client"
 version = "0.1.0"
 edition = "2021"
 description = "A Rust client library for interacting with Zinit service manager"
 license = "MIT"
-repository = "https://github.com/threefoldtech/zinit-client-rs"
-documentation = "https://docs.rs/zinit-client-rs"
+repository = "https://github.com/threefoldtech/zinit-client"
+documentation = "https://docs.rs/zinit-client"
 readme = "README.md"
 keywords = ["zinit", "client", "service-manager", "init"]
 categories = ["api-bindings", "asynchronous"]

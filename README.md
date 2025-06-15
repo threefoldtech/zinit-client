@@ -1,9 +1,9 @@
 # Zinit Client
 
-[![Rust CI](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/ci.yml)
-[![Rust Examples](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/examples.yml/badge.svg)](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/examples.yml)
-[![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client-rs/branch/development/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client-rs)
-[![Security Scan](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/security.yml/badge.svg)](https://github.com/threefoldtech/zinit-client-rs/actions/workflows/security.yml)
+[![Rust CI](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml)
+[![Rust Examples](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml)
+[![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client/branch/development/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client)
+[![Security Scan](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml)
 
 A Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager.
 
@@ -23,7 +23,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zinit-client-rs = "0.1.0"
+zinit-client = "0.1.0"
 ```
 
 ## Building
@@ -44,7 +44,7 @@ cargo build --examples
 ## Usage
 
 ```rust
-use zinit_client_rs::{ZinitClient, Result};
+use zinit_client::{ZinitClient, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
 You can customize the client behavior using `ClientConfig`:
 
 ```rust
-use zinit_client_rs::{ZinitClient, ClientConfig};
+use zinit_client::{ZinitClient, ClientConfig};
 use std::time::Duration;
 
 let config = ClientConfig {
@@ -134,8 +134,8 @@ Here's how to use it:
 ```rust
 use std::path::PathBuf;
 use tempfile::tempdir;
-use zinit_client_rs::ZinitClient;
-use zinit_client_rs::tests::MockZinitServer;
+use zinit_client::ZinitClient;
+use zinit_client::tests::MockZinitServer;
 
 #[tokio::main]
 async fn main() -> Result<()> {

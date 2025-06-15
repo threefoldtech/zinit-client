@@ -72,6 +72,43 @@ async fn main() -> Result<()> {
 }
 ```
 
+### Service CRUD Operations
+
+The client supports creating, reading, updating, and deleting service configurations:
+
+```rust
+use serde_json::json;
+use zinit_client::{ZinitClient, Result};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let client = ZinitClient::new("/var/run/zinit.sock");
+
+    // Create a new service
+    let service_config = json!({
+        "exec": "/usr/bin/my-app",
+        "args": ["--port", "8080"],
+        "env": {
+            "PORT": "8080",
+            "ENV": "production"
+        },
+        "oneshot": false,
+        "working_dir": "/opt/my-app"
+    });
+
+    client.create_service("my-app", service_config).await?;
+
+    // Get service configuration
+    let config = client.get_service("my-app").await?;
+    println!("Service config: {}", serde_json::to_string_pretty(&config)?);
+
+    // Delete a service (stops it first if running)
+    client.delete_service("my-app").await?;
+
+    Ok(())
+}
+```
+
 ## Configuration
 
 You can customize the client behavior using `ClientConfig`:
@@ -105,7 +142,7 @@ To run the examples, you need a running Zinit instance. The examples will try to
 # Basic usage example (requires Zinit)
 cargo run --example basic_usage
 
-# Service management example (interactive, requires Zinit)
+# Comprehensive service management with CRUD operations (interactive, requires Zinit)
 cargo run --example service_management
 
 # Log streaming example (interactive, requires Zinit)

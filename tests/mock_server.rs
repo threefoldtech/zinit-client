@@ -177,11 +177,64 @@ impl MockZinitServer {
         Ok(())
     }
 
+    /// Handle create command specially to parse JSON configuration
+    fn handle_create_command(
+        command: &str,
+        services: &Arc<Mutex<HashMap<String, MockService>>>,
+    ) -> String {
+        // Parse: "create service_name {json_config}"
+        let command = command.trim_start_matches("create ");
+
+        // Find the first space to separate service name from JSON
+        if let Some(space_pos) = command.find(' ') {
+            let service_name = &command[..space_pos];
+            let config_str = &command[space_pos + 1..];
+
+            let mut services_lock = services.lock().unwrap();
+
+            // Check if service already exists
+            if services_lock.contains_key(service_name) {
+                format!(
+                    r#"{{"state":"error","body":"service \"{}\" already exists"}}"#,
+                    service_name
+                )
+            } else {
+                // Parse the configuration (basic validation)
+                match serde_json::from_str::<serde_json::Value>(config_str) {
+                    Ok(_config) => {
+                        // Create a new service with default values
+                        let service = MockService {
+                            name: service_name.to_string(),
+                            pid: 0,
+                            state: MockServiceState::Unknown,
+                            target: MockServiceTarget::Down,
+                            after: HashMap::new(),
+                        };
+
+                        services_lock.insert(service_name.to_string(), service);
+                        r#"{"state":"ok","body":null}"#.to_string()
+                    }
+                    Err(_) => {
+                        r#"{"state":"error","body":"invalid service configuration"}"#.to_string()
+                    }
+                }
+            }
+        } else {
+            r#"{"state":"error","body":"unknown command 'create' or wrong arguments count"}"#
+                .to_string()
+        }
+    }
+
     /// Process a command and generate a response
     fn process_command(
         command: &str,
         services: &Arc<Mutex<HashMap<String, MockService>>>,
     ) -> String {
+        // Handle create command specially because it contains JSON
+        if command.starts_with("create ") {
+            return Self::handle_create_command(command, services);
+        }
+
         let parts: Vec<&str> = command.split_whitespace().collect();
 
         if parts.is_empty() {
@@ -339,6 +392,50 @@ impl MockZinitServer {
                     None => {
                         format!(
                             r#"{{"state":"error","body":"service name \"{}\" unknown"}}"#,
+                            service_name
+                        )
+                    }
+                }
+            }
+
+            "get" if parts.len() == 2 => {
+                let service_name = parts[1];
+                let services_lock = services.lock().unwrap();
+
+                match services_lock.get(service_name) {
+                    Some(service) => {
+                        let service_info = serde_json::json!({
+                            "name": service.name,
+                            "pid": service.pid,
+                            "state": service.state.to_string(),
+                            "target": service.target.to_string(),
+                            "after": service.after
+                        });
+
+                        format!(r#"{{"state":"ok","body":{}}}"#, service_info)
+                    }
+                    None => {
+                        format!(
+                            r#"{{"state":"error","body":"service \"{}\" not found"}}"#,
+                            service_name
+                        )
+                    }
+                }
+            }
+            "delete" if parts.len() == 2 => {
+                let service_name = parts[1];
+                let mut services_lock = services.lock().unwrap();
+
+                match services_lock.get(service_name) {
+                    Some(_service) => {
+                        // In real Zinit, delete stops the service first if it's running
+                        // For simplicity, we'll just remove it regardless of state
+                        services_lock.remove(service_name);
+                        r#"{"state":"ok","body":null}"#.to_string()
+                    }
+                    None => {
+                        format!(
+                            r#"{{"state":"error","body":"service \"{}\" not found"}}"#,
                             service_name
                         )
                     }

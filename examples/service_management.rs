@@ -1,3 +1,4 @@
+use serde_json::json;
 use std::collections::HashMap;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -15,7 +16,8 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt::init();
 
-    println!("Starting service management example with mock server");
+    println!("Starting comprehensive service management example with mock server");
+    println!("This example demonstrates all service operations: control, CRUD, and monitoring");
 
     // Create a temporary directory for the socket
     let temp_dir = tempdir().expect("Failed to create temp dir");
@@ -99,12 +101,19 @@ async fn main() -> Result<()> {
     // Menu of operations
     loop {
         println!("\nChoose an operation:");
+        println!("=== Service Control ===");
         println!("1. Start service");
         println!("2. Stop service");
         println!("3. Restart service");
         println!("4. Get status");
         println!("5. Send signal (SIGTERM)");
-        println!("6. Exit");
+        println!("=== Service Management ===");
+        println!("6. Create new service");
+        println!("7. Get service configuration");
+        println!("8. Delete service");
+        println!("9. List all services");
+        println!("=== Other ===");
+        println!("0. Exit");
 
         let mut choice = String::new();
         std::io::stdin()
@@ -234,6 +243,112 @@ async fn main() -> Result<()> {
                 }
             }
             "6" => {
+                println!("Creating a new service...");
+                println!("Enter service name:");
+                let mut new_service_name = String::new();
+                std::io::stdin()
+                    .read_line(&mut new_service_name)
+                    .expect("Failed to read input");
+                let new_service_name = new_service_name.trim();
+
+                if new_service_name.is_empty() {
+                    println!("Service name cannot be empty");
+                    continue;
+                }
+
+                println!("Enter executable path (e.g., /usr/bin/nginx):");
+                let mut exec_path = String::new();
+                std::io::stdin()
+                    .read_line(&mut exec_path)
+                    .expect("Failed to read input");
+                let exec_path = exec_path.trim();
+
+                if exec_path.is_empty() {
+                    println!("Executable path cannot be empty");
+                    continue;
+                }
+
+                // Create a basic service configuration
+                let service_config = json!({
+                    "exec": exec_path,
+                    "oneshot": false,
+                    "env": {
+                        "CREATED_BY": "zinit-client-example"
+                    }
+                });
+
+                match client
+                    .create_service(new_service_name, service_config)
+                    .await
+                {
+                    Ok(_) => {
+                        println!("✓ Service '{}' created successfully", new_service_name);
+                        println!("You can now manage it using the other menu options");
+                    }
+                    Err(e) => println!("✗ Error creating service: {}", e),
+                }
+            }
+            "7" => {
+                println!("Getting service configuration for '{}'...", service_name);
+                match client.get_service(&service_name).await {
+                    Ok(config) => {
+                        println!("✓ Service configuration:");
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&config)
+                                .unwrap_or_else(|_| "Failed to format JSON".to_string())
+                        );
+                    }
+                    Err(e) => println!("✗ Error getting service configuration: {}", e),
+                }
+            }
+            "8" => {
+                println!(
+                    "⚠️  WARNING: This will permanently delete the service '{}'",
+                    service_name
+                );
+                println!("Are you sure? (y/N):");
+                let mut confirmation = String::new();
+                std::io::stdin()
+                    .read_line(&mut confirmation)
+                    .expect("Failed to read input");
+                let confirmation = confirmation.trim().to_lowercase();
+
+                if confirmation == "y" || confirmation == "yes" {
+                    println!("Deleting service '{}'...", service_name);
+                    match client.delete_service(&service_name).await {
+                        Ok(_) => {
+                            println!("✓ Service '{}' deleted successfully", service_name);
+                            println!("Note: You may need to select a different service for further operations");
+                        }
+                        Err(e) => println!("✗ Error deleting service: {}", e),
+                    }
+                } else {
+                    println!("Delete operation cancelled");
+                }
+            }
+            "9" => {
+                println!("Listing all services...");
+                match client.list().await {
+                    Ok(services) => {
+                        if services.is_empty() {
+                            println!("No services found");
+                        } else {
+                            println!("✓ Found {} services:", services.len());
+                            for (name, state) in &services {
+                                let indicator = if name == &service_name {
+                                    " <- current"
+                                } else {
+                                    ""
+                                };
+                                println!("  - {}: {:?}{}", name, state, indicator);
+                            }
+                        }
+                    }
+                    Err(e) => println!("✗ Error listing services: {}", e),
+                }
+            }
+            "0" => {
                 println!("Exiting...");
                 break;
             }

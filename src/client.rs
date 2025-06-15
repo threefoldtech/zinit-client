@@ -282,6 +282,68 @@ impl ZinitClient {
         self.connection_manager.execute_command("reboot").await?;
         Ok(())
     }
+
+    /// Get raw service information
+    pub async fn get_service(&self, service: impl AsRef<str>) -> Result<serde_json::Value> {
+        let service_name = service.as_ref();
+        debug!("Getting raw service info for: {}", service_name);
+
+        let command = ProtocolHandler::format_command("status", &[service_name]);
+        let response = self.connection_manager.execute_command(&command).await?;
+
+        Ok(response)
+    }
+
+    /// Create a new service
+    pub async fn create_service(
+        &self,
+        name: impl AsRef<str>,
+        config: serde_json::Value,
+    ) -> Result<()> {
+        let service_name = name.as_ref();
+        debug!("Creating service: {}", service_name);
+
+        // Convert the config to a string
+        let config_str = serde_json::to_string(&config)?;
+
+        // Format the command with the service name and config
+        let command = ProtocolHandler::format_command("create", &[service_name, &config_str]);
+        self.connection_manager.execute_command(&command).await?;
+
+        Ok(())
+    }
+
+    /// Delete a service
+    pub async fn delete_service(&self, name: impl AsRef<str>) -> Result<()> {
+        let service_name = name.as_ref();
+        debug!("Deleting service: {}", service_name);
+
+        // First ensure the service is stopped
+        let status = self.status(service_name).await?;
+        if status.state == ServiceState::Running || status.target == ServiceTarget::Up {
+            // Stop the service first
+            self.stop(service_name).await?;
+
+            // Wait for the service to stop
+            let mut attempts = 0;
+            let max_attempts = 10;
+
+            while attempts < max_attempts {
+                let status = self.status(service_name).await?;
+                if status.pid == 0 && status.target == ServiceTarget::Down {
+                    break;
+                }
+
+                attempts += 1;
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+        }
+
+        // Now forget the service
+        self.forget(service_name).await?;
+
+        Ok(())
+    }
 }
 
 /// Parse a log line into a LogEntry

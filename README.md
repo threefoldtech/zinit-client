@@ -23,7 +23,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zinit-client = "0.1.0"
+zinit-client = "0.2.0"
 ```
 
 ## Building

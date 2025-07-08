@@ -3,7 +3,7 @@ use crate::protocol::ProtocolHandler;
 use crate::retry::RetryStrategy;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufStream};
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 use tracing::{debug, error, trace};
@@ -73,20 +73,24 @@ impl ConnectionManager {
                 buf_stream.write_all(b"\n").await?;
                 buf_stream.flush().await?;
 
-                // Read the response
+                // Read the response line by line
                 trace!("Reading response from socket");
                 let mut response = String::new();
 
                 // Use timeout for reading the response
-                match timeout(
-                    self.operation_timeout,
-                    buf_stream.read_to_string(&mut response),
-                )
-                .await
-                {
+                match timeout(self.operation_timeout, buf_stream.read_line(&mut response)).await {
                     Ok(result) => {
                         result?;
                         trace!("Response received: {} bytes", response.len());
+
+                        // Remove trailing newline if present
+                        if response.ends_with('\n') {
+                            response.pop();
+                            if response.ends_with('\r') {
+                                response.pop();
+                            }
+                        }
+
                         Ok(response)
                     }
                     Err(_) => {

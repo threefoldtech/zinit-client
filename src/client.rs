@@ -1,13 +1,18 @@
 use crate::connection::ConnectionManager;
 use crate::error::{Result, ZinitError};
-use crate::models::{LogEntry, LogStream, ServiceState, ServiceStatus, ServiceTarget};
+use crate::models::{
+    LogEntry, LogStream, Protocol, ServerCapabilities, ServiceState, ServiceStatus, ServiceTarget,
+};
 use crate::protocol::ProtocolHandler;
 use crate::retry::RetryStrategy;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::OnceCell;
 use tracing::{debug, trace};
 
 /// Configuration for the Zinit client
@@ -44,13 +49,19 @@ impl Default for ClientConfig {
 }
 
 /// Client for interacting with Zinit
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ZinitClient {
     /// Connection manager
     connection_manager: ConnectionManager,
     /// Client configuration
     #[allow(dead_code)]
     config: ClientConfig,
+    /// Detected protocol (lazy initialization)
+    protocol: OnceCell<Protocol>,
+    /// Server capabilities (lazy initialization)
+    capabilities: OnceCell<ServerCapabilities>,
+    /// Request ID counter for JSON-RPC
+    request_id: Arc<AtomicU64>,
 }
 
 impl ZinitClient {
@@ -81,13 +92,136 @@ impl ZinitClient {
         Self {
             connection_manager,
             config,
+            protocol: OnceCell::new(),
+            capabilities: OnceCell::new(),
+            request_id: Arc::new(AtomicU64::new(1)),
         }
+    }
+
+    /// Get the next request ID for JSON-RPC calls
+    fn next_request_id(&self) -> u64 {
+        self.request_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Detect the protocol used by the server
+    async fn detect_protocol(&self) -> Result<Protocol> {
+        debug!("Detecting server protocol");
+
+        // Try JSON-RPC first (new servers)
+        let request_id = self.next_request_id();
+        let json_rpc_request = ProtocolHandler::format_json_rpc_request(
+            "service_list",
+            serde_json::Value::Array(vec![]),
+            request_id,
+        )?;
+
+        match self
+            .connection_manager
+            .send_command(&json_rpc_request)
+            .await
+        {
+            Ok(response) => {
+                // Check if response looks like JSON-RPC
+                if response.contains("\"jsonrpc\":\"2.0\"") {
+                    debug!("Detected JSON-RPC protocol (new server)");
+                    return Ok(Protocol::JsonRpc);
+                }
+            }
+            Err(_) => {
+                // JSON-RPC failed, continue to try raw commands
+            }
+        }
+
+        // Try raw commands (old servers)
+        let raw_command = ProtocolHandler::format_raw_command("list", &[]);
+        match self.connection_manager.send_command(&raw_command).await {
+            Ok(response) => {
+                // Check if response looks like old server format
+                if response.contains("\"state\":\"ok\"") || response.contains("\"state\":\"error\"")
+                {
+                    debug!("Detected raw command protocol (old server)");
+                    return Ok(Protocol::RawCommands);
+                }
+            }
+            Err(e) => {
+                return Err(ZinitError::ProtocolDetectionFailed(format!(
+                    "Failed to detect protocol: {}",
+                    e
+                )));
+            }
+        }
+
+        Err(ZinitError::ProtocolDetectionFailed(
+            "Unable to determine server protocol".to_string(),
+        ))
+    }
+
+    /// Detect server capabilities based on protocol
+    async fn detect_capabilities(&self) -> Result<ServerCapabilities> {
+        let protocol = self.get_protocol().await?;
+        debug!("Detecting server capabilities for protocol: {}", protocol);
+
+        let capabilities = match protocol {
+            Protocol::JsonRpc => {
+                // New servers support all features
+                ServerCapabilities::full()
+            }
+            Protocol::RawCommands => {
+                // Old servers have limited capabilities
+                ServerCapabilities::legacy()
+            }
+        };
+
+        debug!("Detected capabilities: {:?}", capabilities);
+        Ok(capabilities)
+    }
+
+    /// Get the detected protocol (with lazy initialization)
+    async fn get_protocol(&self) -> Result<Protocol> {
+        if let Some(protocol) = self.protocol.get() {
+            return Ok(*protocol);
+        }
+
+        let protocol = self.detect_protocol().await?;
+        let _ = self.protocol.set(protocol);
+        Ok(protocol)
+    }
+
+    /// Get the server capabilities (with lazy initialization)
+    async fn get_capabilities(&self) -> Result<&ServerCapabilities> {
+        if let Some(capabilities) = self.capabilities.get() {
+            return Ok(capabilities);
+        }
+
+        let capabilities = self.detect_capabilities().await?;
+        let _ = self.capabilities.set(capabilities);
+        Ok(self.capabilities.get().unwrap())
+    }
+
+    /// Execute a command using the appropriate protocol
+    async fn execute_command(
+        &self,
+        method: &str,
+        args: &[&str],
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        let protocol = self.get_protocol().await?;
+        let request_id = self.next_request_id();
+
+        let request = ProtocolHandler::format_request(protocol, method, args, params, request_id)?;
+        let response = self.connection_manager.send_command(&request).await?;
+        ProtocolHandler::parse_response_by_protocol(protocol, &response)
     }
 
     /// List all services and their states
     pub async fn list(&self) -> Result<HashMap<String, ServiceState>> {
         debug!("Listing all services");
-        let response = self.connection_manager.execute_command("list").await?;
+
+        let protocol = self.get_protocol().await?;
+        let response = match protocol {
+            Protocol::JsonRpc => self.execute_command("service_list", &[], None).await?,
+            Protocol::RawCommands => self.execute_command("list", &[], None).await?,
+        };
 
         let map: HashMap<String, String> = serde_json::from_value(response)?;
         let result = map
@@ -303,12 +437,33 @@ impl ZinitClient {
         let service_name = name.as_ref();
         debug!("Creating service: {}", service_name);
 
-        // Convert the config to a string
-        let config_str = serde_json::to_string(&config)?;
+        // Check if the server supports dynamic service creation
+        let capabilities = self.get_capabilities().await?;
+        if !capabilities.supports_create {
+            return Err(ZinitError::FeatureNotSupported(format!(
+                "Dynamic service creation is not supported by this zinit server ({}). \
+                     Please create a service configuration file manually in /etc/zinit/{}.yaml",
+                capabilities.protocol, service_name
+            )));
+        }
 
-        // Format the command with the service name and config
-        let command = ProtocolHandler::format_command("create", &[service_name, &config_str]);
-        self.connection_manager.execute_command(&command).await?;
+        // Use the appropriate protocol
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                // New servers: use service_create RPC call
+                let params = serde_json::json!([service_name, config]);
+                self.execute_command("service_create", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                // This should not happen since we checked capabilities above,
+                // but handle it gracefully
+                return Err(ZinitError::FeatureNotSupported(
+                    "Dynamic service creation requires zinit v0.2.25+".to_string(),
+                ));
+            }
+        }
 
         Ok(())
     }

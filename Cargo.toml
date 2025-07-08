@@ -10,6 +10,9 @@ readme = "README.md"
 keywords = ["zinit", "client", "service-manager", "init"]
 categories = ["api-bindings", "asynchronous"]
 
+# Empty workspace table to exclude from parent workspace
+[workspace]
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -26,3 +29,7 @@ async-stream = "0.3"
 tokio-test = "0.4"
 tempfile = "3"
 tracing-subscriber = "0.3"
+
+[[example]]
+name = "protocol_test"
+path = "examples/protocol_test.rs"

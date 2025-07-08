@@ -1,5 +1,5 @@
 use crate::error::{Result, ZinitError};
-use crate::models::{Response, ResponseState};
+use crate::models::{JsonRpcRequest, JsonRpcResponse, Protocol, Response, ResponseState};
 use serde_json::Value;
 use tracing::debug;
 
@@ -85,4 +85,66 @@ fn extract_service_name(error_msg: &str) -> String {
         .find(|word| !word.starts_with('"') && !word.contains("service"))
         .unwrap_or("unknown")
         .to_string()
+}
+
+impl ProtocolHandler {
+    /// Format a JSON-RPC request for new servers
+    pub fn format_json_rpc_request(method: &str, params: Value, id: u64) -> Result<String> {
+        let request = JsonRpcRequest::new(method, params, id);
+        serde_json::to_string(&request).map_err(ZinitError::from)
+    }
+
+    /// Parse a JSON-RPC response from new servers
+    pub fn parse_json_rpc_response(response: &str) -> Result<Value> {
+        debug!("Parsing JSON-RPC response: {}", response);
+
+        let rpc_response: JsonRpcResponse = serde_json::from_str(response)?;
+
+        if let Some(error) = rpc_response.error {
+            return Err(ZinitError::JsonRpcError {
+                code: error.code,
+                message: error.message,
+                data: error.data,
+            });
+        }
+
+        Ok(rpc_response.result.unwrap_or(Value::Null))
+    }
+
+    /// Format a raw command for old servers
+    pub fn format_raw_command(command: &str, args: &[&str]) -> String {
+        Self::format_command(command, args)
+    }
+
+    /// Parse a raw response from old servers
+    pub fn parse_raw_response(response: &str) -> Result<Value> {
+        Self::parse_response(response)
+    }
+
+    /// Route request formatting based on protocol
+    pub fn format_request(
+        protocol: Protocol,
+        method: &str,
+        args: &[&str],
+        params: Option<Value>,
+        id: u64,
+    ) -> Result<String> {
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = params.unwrap_or(Value::Array(
+                    args.iter().map(|s| Value::String(s.to_string())).collect(),
+                ));
+                Self::format_json_rpc_request(method, params, id)
+            }
+            Protocol::RawCommands => Ok(Self::format_raw_command(method, args)),
+        }
+    }
+
+    /// Route response parsing based on protocol
+    pub fn parse_response_by_protocol(protocol: Protocol, response: &str) -> Result<Value> {
+        match protocol {
+            Protocol::JsonRpc => Self::parse_json_rpc_response(response),
+            Protocol::RawCommands => Self::parse_raw_response(response),
+        }
+    }
 }

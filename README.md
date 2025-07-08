@@ -1,42 +1,21 @@
-# Universal Zinit Client
+# Zinit Client
 
-[![Rust CI](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml)
-[![Rust Examples](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml)
-[![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client/branch/development/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client)
-[![Security Scan](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml)
+[![Crates.io](https://img.shields.io/crates/v/zinit-client.svg)](https://crates.io/crates/zinit-client)
+[![Documentation](https://docs.rs/zinit-client/badge.svg)](https://docs.rs/zinit-client)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A universal Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager that works seamlessly with both old and new server versions.
+A Rust client library for the [Zinit](https://github.com/threefoldtech/zinit) service manager.
 
-## 🌟 Universal Compatibility
-
-This client automatically detects and adapts to different Zinit server versions:
-
-- **Old Servers (v0.2.14)**: Uses raw command protocol with graceful feature degradation
-- **New Servers (v0.2.25+)**: Uses JSON-RPC protocol with full feature support
-- **Automatic Detection**: No configuration needed - the client detects the server type automatically
-- **Consistent API**: Same client code works with both server versions
+**Universal Compatibility**: Automatically works with both old (v0.2.14) and new (v0.2.25+) Zinit servers through automatic protocol detection.
 
 ## Features
 
-### Universal Interface
-
-- **Automatic Protocol Detection**: Seamlessly switches between JSON-RPC and raw commands
-- **Feature Awareness**: Knows what each server version supports
-- **Graceful Degradation**: Helpful error messages for unsupported features
-- **Backward Compatibility**: Full support for legacy zinit installations
-
-### Complete Service Management
-
-- Complete API coverage for all Zinit operations
-- Service lifecycle management (create, start, stop, restart, monitor, forget, delete)
-- Real-time service status monitoring with PID tracking
-- Signal management (SIGTERM, SIGKILL, etc.)
-- Robust error handling with custom error types
-- Automatic reconnection on socket errors
-- Retry mechanisms for transient failures
-- Async/await support using Tokio
-- Strongly typed service states and responses
-- Efficient log streaming with filtering
+- **Zero Configuration**: Automatically detects server version and protocol
+- **Complete API**: All Zinit operations (list, start, stop, create, delete, etc.)
+- **Async/Await**: Built on Tokio for high performance
+- **Type Safe**: Strongly typed service states and responses
+- **Error Handling**: Comprehensive error types with helpful messages
+- **Backward Compatible**: Works with legacy Zinit installations
 
 ## Installation
 
@@ -49,260 +28,61 @@ zinit-client = "0.4.0"
 
 ## Quick Start
 
-The universal client automatically detects your zinit server version and adapts accordingly:
-
 ```rust
 use zinit_client::ZinitClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Works with both old and new zinit servers
     let client = ZinitClient::new("/var/run/zinit.sock");
 
-    // List services (works on all server versions)
-    let services = client.list().await?;
-    println!("Found {} services", services.len());
-
-    // Create service (automatically detects if supported)
-    match client.create_service("my-service", serde_json::json!({
-        "exec": "echo 'Hello World'",
-        "oneshot": true
-    })).await {
-        Ok(_) => println!("Service created successfully"),
-        Err(e) if e.to_string().contains("not supported") => {
-            println!("Dynamic service creation not supported on this server");
-            println!("Please create /etc/zinit/my-service.yaml manually");
-        }
-        Err(e) => return Err(e.into()),
-    }
-
-    Ok(())
-}
-```
-
-## Demo
-
-Run the comprehensive demo to see the universal interface in action:
-
-```bash
-# Test with new server (JSON-RPC)
-cargo run --example universal_client_demo /tmp/zinit.sock
-
-# Test with old server (Raw Commands)
-cargo run --example universal_client_demo /run/zinit.sock
-```
-
-## Building
-
-To build the library, you need Rust and Cargo installed. Then run:
-
-```bash
-# Build the library
-cargo build
-
-# Build with optimizations
-cargo build --release
-
-# Build the examples
-cargo build --examples
-```
-
-## Usage
-
-```rust
-use zinit_client::{ZinitClient, Result};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Create a client with default configuration
-    let client = ZinitClient::new("/var/run/zinit.sock");
-    
     // List all services
     let services = client.list().await?;
     println!("Services: {:?}", services);
-    
+
     // Start a service
-    client.start("nginx").await?;
-    
+    client.start("my-service").await?;
+
     // Get service status
-    let status = client.status("nginx").await?;
-    println!("Nginx status: {:?}", status);
-    
-    // Stream logs
-    let mut logs = client.logs(true, Some("nginx")).await?;
-    while let Some(log) = logs.next().await {
-        println!("{}: {}", log?.timestamp, log?.message);
-    }
-    
-    Ok(())
-}
-```
-
-### Service CRUD Operations
-
-The client supports creating, reading, updating, and deleting service configurations:
-
-```rust
-use serde_json::json;
-use zinit_client::{ZinitClient, Result};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let client = ZinitClient::new("/var/run/zinit.sock");
-
-    // Create a new service
-    let service_config = json!({
-        "exec": "/usr/bin/my-app",
-        "args": ["--port", "8080"],
-        "env": {
-            "PORT": "8080",
-            "ENV": "production"
-        },
-        "oneshot": false,
-        "working_dir": "/opt/my-app"
-    });
-
-    client.create_service("my-app", service_config).await?;
-
-    // Get service configuration
-    let config = client.get_service("my-app").await?;
-    println!("Service config: {}", serde_json::to_string_pretty(&config)?);
-
-    // Delete a service (stops it first if running)
-    client.delete_service("my-app").await?;
+    let status = client.status("my-service").await?;
+    println!("Status: {:?}", status);
 
     Ok(())
 }
 ```
 
-## Configuration
+## API Overview
 
-You can customize the client behavior using `ClientConfig`:
+### Service Management
 
 ```rust
-use zinit_client::{ZinitClient, ClientConfig};
-use std::time::Duration;
+// List all services
+let services = client.list().await?;
 
-let config = ClientConfig {
-    socket_path: "/var/run/zinit.sock".into(),
-    connection_timeout: Duration::from_secs(5),
-    operation_timeout: Duration::from_secs(30),
-    max_retries: 3,
-    retry_delay: Duration::from_millis(100),
-    max_retry_delay: Duration::from_secs(5),
-    retry_jitter: true,
-};
+// Service lifecycle
+client.start("service-name").await?;
+client.stop("service-name").await?;
+client.restart("service-name").await?;
 
-let client = ZinitClient::with_config(config);
+// Get detailed status
+let status = client.status("service-name").await?;
+
+// Create/delete services (if supported by server)
+client.create_service("name", config).await?;
+client.delete_service("name").await?;
 ```
 
 ## Examples
 
-See the [examples](./examples) directory for more usage examples:
-
-### Running Examples
-
-To run the examples, you need a running Zinit instance. The examples will try to connect to Zinit at the default socket path (`/var/run/zinit.sock`).
+Run the demo to see the universal interface in action:
 
 ```bash
-# Basic usage example (requires Zinit)
-cargo run --example basic_usage
-
-# Comprehensive service management with CRUD operations (interactive, requires Zinit)
-cargo run --example service_management
-
-# Log streaming example (interactive, requires Zinit)
-cargo run --example log_streaming
-
-# Mock server demo (doesn't require Zinit)
-cargo run --example mock_server_demo
+cargo run --example <example_name> <sock_path>
 ```
 
-If you want to use a different socket path, you'll need to modify the examples. Open the example file and change the socket path in the `ZinitClient::new()` call:
+## Documentation
 
-```rust
-// Change this line
-let client = ZinitClient::new("/var/run/zinit.sock");
-
-// To use a custom socket path
-let client = ZinitClient::new("/path/to/your/zinit.sock");
-```
-
-### Running Without Zinit
-
-If you don't have Zinit running, you can still test the client by using the mock server provided in the tests directory. The mock server simulates a Zinit instance for testing purposes.
-
-Here's how to use it:
-
-```rust
-use std::path::PathBuf;
-use tempfile::tempdir;
-use zinit_client::ZinitClient;
-use zinit_client::tests::MockZinitServer;
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Create a temporary directory for the socket
-    let temp_dir = tempdir().expect("Failed to create temp dir");
-    let socket_path = temp_dir.path().join("mock-zinit.sock");
-    
-    // Create and start the mock server
-    let mut server = MockZinitServer::new(&socket_path).await;
-    server.start().await.expect("Failed to start mock server");
-    
-    // Add some mock services
-    server.add_service(MockService {
-        name: "test-service".to_string(),
-        pid: 1001,
-        state: MockServiceState::Running,
-        target: MockServiceTarget::Up,
-        after: HashMap::new(),
-    });
-    
-    // Create a client to connect to the mock server
-    let client = ZinitClient::new(&socket_path);
-    
-    // Use the client as normal
-    let services = client.list().await?;
-    println!("Services: {:?}", services);
-    
-    // Stop the mock server when done
-    server.stop().await;
-    
-    Ok(())
-}
-```
-
-Note: The examples assume Zinit is running and listening on the default socket path (`/var/run/zinit.sock`). If your Zinit instance is using a different socket path, you'll need to modify the examples accordingly.
-
-## Testing
-
-The library includes both integration tests and a mock server for testing without requiring a real Zinit instance.
-
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run a specific test
-cargo test test_client_reconnection
-```
-
-All tests use the mock server, so they can be run without requiring a real Zinit instance. The mock server simulates a Zinit instance for testing purposes, allowing for reliable and reproducible tests.
-
-## CI/CD
-
-This project uses GitHub Actions for continuous integration and delivery:
-
-- **Rust CI**: Builds the project, runs tests, and checks code formatting and linting
-- **Rust Examples**: Builds and runs all examples to ensure they work correctly
-- **Code Coverage**: Generates code coverage reports and uploads them to Codecov
-- **Security Scan**: Performs security audits on dependencies using cargo-audit and cargo-deny
-- **Publish**: Automatically publishes the crate to crates.io when a new release is created
-
-All workflows run on every push to any branch and on all pull requests.
+For detailed API documentation, visit [docs.rs/zinit-client](https://docs.rs/zinit-client).
 
 ## License
 
-See [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

@@ -452,8 +452,18 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Forgetting service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("forget", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_forget", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("forget", &[service_name], None)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -583,24 +593,40 @@ impl ZinitClient {
         let service_name = name.as_ref();
         debug!("Deleting service: {}", service_name);
 
-        // First ensure the service is stopped
-        let status = self.status(service_name).await?;
-        if status.state == ServiceState::Running || status.target == ServiceTarget::Up {
-            // Stop the service first
-            self.stop(service_name).await?;
+        // Try to get status, but don't fail if it doesn't work
+        match self.status(service_name).await {
+            Ok(status) => {
+                if status.state == ServiceState::Running || status.target == ServiceTarget::Up {
+                    // Stop the service first
+                    if let Err(e) = self.stop(service_name).await {
+                        debug!("Warning: Failed to stop service {}: {}", service_name, e);
+                    }
 
-            // Wait for the service to stop
-            let mut attempts = 0;
-            let max_attempts = 10;
+                    // Wait for the service to stop
+                    let mut attempts = 0;
+                    let max_attempts = 10;
 
-            while attempts < max_attempts {
-                let status = self.status(service_name).await?;
-                if status.pid == 0 && status.target == ServiceTarget::Down {
-                    break;
+                    while attempts < max_attempts {
+                        match self.status(service_name).await {
+                            Ok(status) => {
+                                if status.pid == 0 && status.target == ServiceTarget::Down {
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                // If status fails, assume service is stopped
+                                break;
+                            }
+                        }
+
+                        attempts += 1;
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
                 }
-
-                attempts += 1;
-                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            Err(e) => {
+                debug!("Warning: Could not get status for {}: {}", service_name, e);
+                // Continue with deletion anyway
             }
         }
 

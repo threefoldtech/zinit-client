@@ -6,8 +6,6 @@
 
 A Rust client library for the [Zinit](https://github.com/threefoldtech/zinit) service manager.
 
-**Universal Compatibility**: Automatically works with both old (v0.2.14) and new (v0.2.25+) Zinit servers through automatic protocol detection.
-
 ## Features
 
 - **Zero Configuration**: Automatically detects server version and protocol

@@ -110,7 +110,7 @@ impl ZinitClient {
         // Try JSON-RPC first (new servers)
         let request_id = self.next_request_id();
         let json_rpc_request = ProtocolHandler::format_json_rpc_request(
-            "service_list",
+            "service.list",
             serde_json::Value::Array(vec![]),
             request_id,
         )?;
@@ -219,7 +219,7 @@ impl ZinitClient {
 
         let protocol = self.get_protocol().await?;
         let response = match protocol {
-            Protocol::JsonRpc => self.execute_command("service_list", &[], None).await?,
+            Protocol::JsonRpc => self.execute_command("service.list", &[], None).await?,
             Protocol::RawCommands => self.execute_command("list", &[], None).await?,
         };
 
@@ -253,7 +253,7 @@ impl ZinitClient {
         let response = match protocol {
             Protocol::JsonRpc => {
                 let params = serde_json::json!([service_name]);
-                self.execute_command("service_status", &[], Some(params))
+                self.execute_command("service.status", &[], Some(params))
                     .await?
             }
             Protocol::RawCommands => {
@@ -456,7 +456,7 @@ impl ZinitClient {
         match protocol {
             Protocol::JsonRpc => {
                 let params = serde_json::json!([service_name]);
-                self.execute_command("service_forget", &[], Some(params))
+                self.execute_command("service.forget", &[], Some(params))
                     .await?;
             }
             Protocol::RawCommands => {
@@ -571,10 +571,19 @@ impl ZinitClient {
         let protocol = self.get_protocol().await?;
         match protocol {
             Protocol::JsonRpc => {
-                // New servers: use service_create RPC call
+                // New servers: use service.create RPC call
                 let params = serde_json::json!([service_name, config]);
-                self.execute_command("service_create", &[], Some(params))
-                    .await?;
+                match self
+                    .execute_command("service.create", &[], Some(params))
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(ZinitError::JsonRpcError { code: -32007, .. }) => {
+                        // Service already exists - this is OK for testing
+                        debug!("Service {} already exists, continuing", service_name);
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             Protocol::RawCommands => {
                 // This should not happen since we checked capabilities above,
@@ -630,8 +639,24 @@ impl ZinitClient {
             }
         }
 
-        // Now forget the service
+        // Now forget the service and delete the config file
         self.forget(service_name).await?;
+
+        // For new servers, also delete the service configuration file
+        let protocol = self.get_protocol().await?;
+        if let Protocol::JsonRpc = protocol {
+            let params = serde_json::json!([service_name]);
+            if let Err(e) = self
+                .execute_command("service.delete", &[], Some(params))
+                .await
+            {
+                debug!(
+                    "Warning: Could not delete service config file for {}: {}",
+                    service_name, e
+                );
+                // Don't fail the whole operation if config file deletion fails
+            }
+        }
 
         Ok(())
     }

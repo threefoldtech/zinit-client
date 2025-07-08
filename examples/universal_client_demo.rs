@@ -1,7 +1,16 @@
-//! Comprehensive Universal Zinit Client Test
+//! Universal Zinit Client Demo
 //!
-//! This example tests ALL supported methods of the universal zinit-client interface
-//! with both old (v0.2.14) and new (v0.2.25+) zinit server versions.
+//! This example demonstrates the universal zinit-client interface that works
+//! seamlessly with both old (v0.2.14) and new (v0.2.25+) zinit server versions.
+//!
+//! Features demonstrated:
+//! - Automatic protocol detection (JSON-RPC vs Raw Commands)
+//! - Feature-aware operations with graceful degradation
+//! - Complete service lifecycle management
+//! - Consistent API across server versions
+//!
+//! Usage:
+//!   cargo run --example universal_client_demo [socket_path]
 
 use serde_json::json;
 use std::env;
@@ -18,9 +27,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .unwrap_or_else(|| "/tmp/zinit.sock".to_string());
 
-    println!("🔍 COMPREHENSIVE Universal Zinit Client Test");
+    println!("🌟 Universal Zinit Client Demo");
     println!("📍 Socket path: {}", socket_path);
-    println!("🎯 Testing ALL supported methods on both server versions");
+    println!("🔄 Demonstrating universal interface with automatic protocol detection");
     println!();
 
     // Create client
@@ -49,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 2: Service Creation & Deletion (Feature Detection)
     println!("🔧 Test 2: Service Creation & Deletion");
-    let test_service_name = "comprehensive-test-service";
+    let test_service_name = "demo-service";
     let test_config = json!({
         "exec": "sleep 30",
         "oneshot": false
@@ -206,9 +215,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
 
     // Summary
-    println!("🎉 COMPREHENSIVE Universal Interface Test Complete!");
+    println!("🎉 Universal Zinit Client Demo Complete!");
     println!();
-    println!("📊 Test Results Summary:");
+    println!("📊 Demo Results Summary:");
     println!("   ✅ Protocol detection: Working");
     println!("   ✅ Service listing: Working");
     println!("   ✅ Service status: Working");

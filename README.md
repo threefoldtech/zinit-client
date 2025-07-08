@@ -1,21 +1,42 @@
-# Zinit Client
+# Universal Zinit Client
 
 [![Rust CI](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/ci.yml)
 [![Rust Examples](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/examples.yml)
 [![Code Coverage](https://codecov.io/gh/threefoldtech/zinit-client/branch/development/graph/badge.svg)](https://codecov.io/gh/threefoldtech/zinit-client)
 [![Security Scan](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml/badge.svg)](https://github.com/threefoldtech/zinit-client/actions/workflows/security.yml)
 
-A Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager.
+A universal Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager that works seamlessly with both old and new server versions.
+
+## 🌟 Universal Compatibility
+
+This client automatically detects and adapts to different Zinit server versions:
+
+- **Old Servers (v0.2.14)**: Uses raw command protocol with graceful feature degradation
+- **New Servers (v0.2.25+)**: Uses JSON-RPC protocol with full feature support
+- **Automatic Detection**: No configuration needed - the client detects the server type automatically
+- **Consistent API**: Same client code works with both server versions
 
 ## Features
 
+### Universal Interface
+
+- **Automatic Protocol Detection**: Seamlessly switches between JSON-RPC and raw commands
+- **Feature Awareness**: Knows what each server version supports
+- **Graceful Degradation**: Helpful error messages for unsupported features
+- **Backward Compatibility**: Full support for legacy zinit installations
+
+### Complete Service Management
+
 - Complete API coverage for all Zinit operations
+- Service lifecycle management (create, start, stop, restart, monitor, forget, delete)
+- Real-time service status monitoring with PID tracking
+- Signal management (SIGTERM, SIGKILL, etc.)
 - Robust error handling with custom error types
 - Automatic reconnection on socket errors
 - Retry mechanisms for transient failures
 - Async/await support using Tokio
 - Strongly typed service states and responses
-- Efficient log streaming
+- Efficient log streaming with filtering
 
 ## Installation
 
@@ -23,7 +44,52 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zinit-client = "0.2.0"
+zinit-client = "0.3.0"
+```
+
+## Quick Start
+
+The universal client automatically detects your zinit server version and adapts accordingly:
+
+```rust
+use zinit_client::ZinitClient;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Works with both old and new zinit servers
+    let client = ZinitClient::new("/var/run/zinit.sock");
+
+    // List services (works on all server versions)
+    let services = client.list().await?;
+    println!("Found {} services", services.len());
+
+    // Create service (automatically detects if supported)
+    match client.create_service("my-service", serde_json::json!({
+        "exec": "echo 'Hello World'",
+        "oneshot": true
+    })).await {
+        Ok(_) => println!("Service created successfully"),
+        Err(e) if e.to_string().contains("not supported") => {
+            println!("Dynamic service creation not supported on this server");
+            println!("Please create /etc/zinit/my-service.yaml manually");
+        }
+        Err(e) => return Err(e.into()),
+    }
+
+    Ok(())
+}
+```
+
+## Demo
+
+Run the comprehensive demo to see the universal interface in action:
+
+```bash
+# Test with new server (JSON-RPC)
+cargo run --example universal_client_demo /tmp/zinit.sock
+
+# Test with old server (Raw Commands)
+cargo run --example universal_client_demo /run/zinit.sock
 ```
 
 ## Building
@@ -236,7 +302,6 @@ This project uses GitHub Actions for continuous integration and delivery:
 - **Publish**: Automatically publishes the crate to crates.io when a new release is created
 
 All workflows run on every push to any branch and on all pull requests.
-
 
 ## License
 

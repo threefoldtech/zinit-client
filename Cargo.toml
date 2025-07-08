@@ -31,5 +31,5 @@ tempfile = "3"
 tracing-subscriber = "0.3"
 
 [[example]]
-name = "protocol_test"
-path = "examples/protocol_test.rs"
+name = "universal_client_demo"
+path = "examples/universal_client_demo.rs"

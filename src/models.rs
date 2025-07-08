@@ -216,8 +216,10 @@ impl JsonRpcRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct JsonRpcResponse {
     /// JSON-RPC version
+    #[allow(dead_code)]
     pub jsonrpc: String,
     /// Request ID
+    #[allow(dead_code)]
     pub id: Option<u64>,
     /// Result (if successful)
     pub result: Option<serde_json::Value>,

@@ -46,21 +46,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 2: Feature Detection
     println!("🔧 Test 2: Feature Detection");
+    let test_service_name = "test-universal-client";
     let test_config = json!({
         "exec": "echo 'Hello from universal client!'",
         "oneshot": true
     });
 
-    match client
-        .create_service("test-universal-client", test_config)
-        .await
-    {
+    // Check if test service already exists and clean it up first
+    let services = client.list().await?;
+    if services.contains_key(test_service_name) {
+        println!("🧹 Cleaning up existing test service...");
+        match client.delete_service(test_service_name).await {
+            Ok(_) => println!("   ✅ Existing service cleaned up"),
+            Err(e) => println!("   ⚠️  Cleanup warning: {}", e),
+        }
+    }
+
+    match client.create_service(test_service_name, test_config).await {
         Ok(_) => {
             println!("✅ Dynamic service creation supported!");
             println!("🎯 Detected: New server (v0.2.25+) with JSON-RPC protocol");
 
             // Clean up the test service
-            match client.delete_service("test-universal-client").await {
+            match client.delete_service(test_service_name).await {
                 Ok(_) => println!("🧹 Test service cleaned up"),
                 Err(e) => println!("⚠️  Cleanup warning: {}", e),
             }

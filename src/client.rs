@@ -110,7 +110,7 @@ impl ZinitClient {
         // Try JSON-RPC first (new servers)
         let request_id = self.next_request_id();
         let json_rpc_request = ProtocolHandler::format_json_rpc_request(
-            "service.list",
+            "service_list",
             serde_json::Value::Array(vec![]),
             request_id,
         )?;
@@ -219,7 +219,7 @@ impl ZinitClient {
 
         let protocol = self.get_protocol().await?;
         let response = match protocol {
-            Protocol::JsonRpc => self.execute_command("service.list", &[], None).await?,
+            Protocol::JsonRpc => self.execute_command("service_list", &[], None).await?,
             Protocol::RawCommands => self.execute_command("list", &[], None).await?,
         };
 
@@ -253,7 +253,7 @@ impl ZinitClient {
         let response = match protocol {
             Protocol::JsonRpc => {
                 let params = serde_json::json!([service_name]);
-                self.execute_command("service.status", &[], Some(params))
+                self.execute_command("service_status", &[], Some(params))
                     .await?
             }
             Protocol::RawCommands => {
@@ -391,8 +391,17 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Starting service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("start", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_start", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("start", &[service_name], None).await?;
+            }
+        }
 
         Ok(())
     }
@@ -402,8 +411,17 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Stopping service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("stop", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_stop", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("stop", &[service_name], None).await?;
+            }
+        }
 
         Ok(())
     }
@@ -441,8 +459,18 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Monitoring service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("monitor", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_monitor", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("monitor", &[service_name], None)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -456,7 +484,7 @@ impl ZinitClient {
         match protocol {
             Protocol::JsonRpc => {
                 let params = serde_json::json!([service_name]);
-                self.execute_command("service.forget", &[], Some(params))
+                self.execute_command("service_forget", &[], Some(params))
                     .await?;
             }
             Protocol::RawCommands => {
@@ -477,8 +505,18 @@ impl ZinitClient {
             signal_name, service_name
         );
 
-        let command = ProtocolHandler::format_command("kill", &[service_name, signal_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name, signal_name]);
+                self.execute_command("service_kill", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("kill", &[service_name, signal_name], None)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -571,10 +609,10 @@ impl ZinitClient {
         let protocol = self.get_protocol().await?;
         match protocol {
             Protocol::JsonRpc => {
-                // New servers: use service.create RPC call
+                // New servers: use service_create RPC call
                 let params = serde_json::json!([service_name, config]);
                 match self
-                    .execute_command("service.create", &[], Some(params))
+                    .execute_command("service_create", &[], Some(params))
                     .await
                 {
                     Ok(_) => {}
@@ -647,7 +685,7 @@ impl ZinitClient {
         if let Protocol::JsonRpc = protocol {
             let params = serde_json::json!([service_name]);
             if let Err(e) = self
-                .execute_command("service.delete", &[], Some(params))
+                .execute_command("service_delete", &[], Some(params))
                 .await
             {
                 debug!(

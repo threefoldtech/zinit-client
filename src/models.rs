@@ -7,6 +7,71 @@ use std::pin::Pin;
 
 use crate::error::Result;
 
+/// Protocol type used by the zinit server
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Protocol {
+    /// JSON-RPC protocol (new servers v0.2.25+)
+    JsonRpc,
+    /// Raw command protocol (old servers v0.2.14)
+    RawCommands,
+}
+
+impl fmt::Display for Protocol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Protocol::JsonRpc => write!(f, "JSON-RPC"),
+            Protocol::RawCommands => write!(f, "Raw Commands"),
+        }
+    }
+}
+
+/// Server capabilities based on version and protocol
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerCapabilities {
+    /// Protocol used by the server
+    pub protocol: Protocol,
+    /// Whether the server supports dynamic service creation
+    pub supports_create: bool,
+    /// Whether the server supports service deletion
+    pub supports_delete: bool,
+    /// Whether the server supports getting service configuration
+    pub supports_get_config: bool,
+    /// Whether the server supports service statistics
+    pub supports_stats: bool,
+    /// Whether the server supports log streaming
+    pub supports_log_streaming: bool,
+    /// Whether the server supports HTTP/RPC server management
+    pub supports_http_server: bool,
+}
+
+impl ServerCapabilities {
+    /// Full capabilities for new servers (JSON-RPC)
+    pub fn full() -> Self {
+        Self {
+            protocol: Protocol::JsonRpc,
+            supports_create: true,
+            supports_delete: true,
+            supports_get_config: true,
+            supports_stats: true,
+            supports_log_streaming: true,
+            supports_http_server: true,
+        }
+    }
+
+    /// Legacy capabilities for old servers (raw commands)
+    pub fn legacy() -> Self {
+        Self {
+            protocol: Protocol::RawCommands,
+            supports_create: false,
+            supports_delete: false,
+            supports_get_config: false,
+            supports_stats: false,
+            supports_log_streaming: true, // Basic log support
+            supports_http_server: false,
+        }
+    }
+}
+
 /// Service state
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
@@ -120,4 +185,55 @@ pub(crate) enum ResponseState {
     Ok,
     /// Error response
     Error,
+}
+
+/// JSON-RPC request structure
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct JsonRpcRequest {
+    /// JSON-RPC version
+    pub jsonrpc: String,
+    /// Method name
+    pub method: String,
+    /// Parameters
+    pub params: serde_json::Value,
+    /// Request ID
+    pub id: u64,
+}
+
+impl JsonRpcRequest {
+    /// Create a new JSON-RPC request
+    pub fn new(method: &str, params: serde_json::Value, id: u64) -> Self {
+        Self {
+            jsonrpc: "2.0".to_string(),
+            method: method.to_string(),
+            params,
+            id,
+        }
+    }
+}
+
+/// JSON-RPC response structure
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct JsonRpcResponse {
+    /// JSON-RPC version
+    #[allow(dead_code)]
+    pub jsonrpc: String,
+    /// Request ID
+    #[allow(dead_code)]
+    pub id: Option<u64>,
+    /// Result (if successful)
+    pub result: Option<serde_json::Value>,
+    /// Error (if failed)
+    pub error: Option<JsonRpcError>,
+}
+
+/// JSON-RPC error structure
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct JsonRpcError {
+    /// Error code
+    pub code: i32,
+    /// Error message
+    pub message: String,
+    /// Additional error data
+    pub data: Option<serde_json::Value>,
 }

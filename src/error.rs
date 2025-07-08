@@ -52,6 +52,25 @@ pub enum ZinitError {
     /// System is shutting down
     #[error("System is shutting down")]
     ShuttingDown,
+
+    /// Feature not supported by this server version
+    #[error("Feature not supported: {0}")]
+    FeatureNotSupported(String),
+
+    /// Protocol detection failed
+    #[error("Protocol detection failed: {0}")]
+    ProtocolDetectionFailed(String),
+
+    /// JSON-RPC error from server
+    #[error("JSON-RPC error (code {code}): {message}")]
+    JsonRpcError {
+        /// Error code
+        code: i32,
+        /// Error message
+        message: String,
+        /// Additional error data
+        data: Option<serde_json::Value>,
+    },
 }
 
 /// Result type for Zinit client operations

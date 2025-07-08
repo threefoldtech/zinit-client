@@ -1,13 +1,18 @@
 use crate::connection::ConnectionManager;
 use crate::error::{Result, ZinitError};
-use crate::models::{LogEntry, LogStream, ServiceState, ServiceStatus, ServiceTarget};
+use crate::models::{
+    LogEntry, LogStream, Protocol, ServerCapabilities, ServiceState, ServiceStatus, ServiceTarget,
+};
 use crate::protocol::ProtocolHandler;
 use crate::retry::RetryStrategy;
 use chrono::Utc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::sync::OnceCell;
 use tracing::{debug, trace};
 
 /// Configuration for the Zinit client
@@ -44,13 +49,19 @@ impl Default for ClientConfig {
 }
 
 /// Client for interacting with Zinit
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ZinitClient {
     /// Connection manager
     connection_manager: ConnectionManager,
     /// Client configuration
     #[allow(dead_code)]
     config: ClientConfig,
+    /// Detected protocol (lazy initialization)
+    protocol: OnceCell<Protocol>,
+    /// Server capabilities (lazy initialization)
+    capabilities: OnceCell<ServerCapabilities>,
+    /// Request ID counter for JSON-RPC
+    request_id: Arc<AtomicU64>,
 }
 
 impl ZinitClient {
@@ -81,13 +92,135 @@ impl ZinitClient {
         Self {
             connection_manager,
             config,
+            protocol: OnceCell::new(),
+            capabilities: OnceCell::new(),
+            request_id: Arc::new(AtomicU64::new(1)),
         }
+    }
+
+    /// Get the next request ID for JSON-RPC calls
+    fn next_request_id(&self) -> u64 {
+        self.request_id.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Detect the protocol used by the server
+    async fn detect_protocol(&self) -> Result<Protocol> {
+        debug!("Detecting server protocol");
+
+        // Try JSON-RPC first (new servers)
+        let request_id = self.next_request_id();
+        let json_rpc_request = ProtocolHandler::format_json_rpc_request(
+            "service_list",
+            serde_json::Value::Array(vec![]),
+            request_id,
+        )?;
+
+        match self
+            .connection_manager
+            .send_command(&json_rpc_request)
+            .await
+        {
+            Ok(response) => {
+                // Check if response looks like JSON-RPC
+                if response.contains("\"jsonrpc\":\"2.0\"") {
+                    debug!("Detected JSON-RPC protocol (new server)");
+                    return Ok(Protocol::JsonRpc);
+                }
+            }
+            Err(_) => {
+                // JSON-RPC failed, continue to try raw commands
+            }
+        }
+
+        // Try raw commands (old servers)
+        let raw_command = ProtocolHandler::format_raw_command("list", &[]);
+        match self.connection_manager.send_command(&raw_command).await {
+            Ok(response) => {
+                // Check if response looks like old server format
+                if response.contains("\"state\":\"ok\"") || response.contains("\"state\":\"error\"")
+                {
+                    debug!("Detected raw command protocol (old server)");
+                    return Ok(Protocol::RawCommands);
+                }
+            }
+            Err(e) => {
+                return Err(ZinitError::ProtocolDetectionFailed(format!(
+                    "Failed to detect protocol: {e}"
+                )));
+            }
+        }
+
+        Err(ZinitError::ProtocolDetectionFailed(
+            "Unable to determine server protocol".to_string(),
+        ))
+    }
+
+    /// Detect server capabilities based on protocol
+    async fn detect_capabilities(&self) -> Result<ServerCapabilities> {
+        let protocol = self.get_protocol().await?;
+        debug!("Detecting server capabilities for protocol: {}", protocol);
+
+        let capabilities = match protocol {
+            Protocol::JsonRpc => {
+                // New servers support all features
+                ServerCapabilities::full()
+            }
+            Protocol::RawCommands => {
+                // Old servers have limited capabilities
+                ServerCapabilities::legacy()
+            }
+        };
+
+        debug!("Detected capabilities: {:?}", capabilities);
+        Ok(capabilities)
+    }
+
+    /// Get the detected protocol (with lazy initialization)
+    async fn get_protocol(&self) -> Result<Protocol> {
+        if let Some(protocol) = self.protocol.get() {
+            return Ok(*protocol);
+        }
+
+        let protocol = self.detect_protocol().await?;
+        let _ = self.protocol.set(protocol);
+        Ok(protocol)
+    }
+
+    /// Get the server capabilities (with lazy initialization)
+    async fn get_capabilities(&self) -> Result<&ServerCapabilities> {
+        if let Some(capabilities) = self.capabilities.get() {
+            return Ok(capabilities);
+        }
+
+        let capabilities = self.detect_capabilities().await?;
+        let _ = self.capabilities.set(capabilities);
+        Ok(self.capabilities.get().unwrap())
+    }
+
+    /// Execute a command using the appropriate protocol
+    async fn execute_command(
+        &self,
+        method: &str,
+        args: &[&str],
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
+        let protocol = self.get_protocol().await?;
+        let request_id = self.next_request_id();
+
+        let request = ProtocolHandler::format_request(protocol, method, args, params, request_id)?;
+        let response = self.connection_manager.send_command(&request).await?;
+        ProtocolHandler::parse_response_by_protocol(protocol, &response)
     }
 
     /// List all services and their states
     pub async fn list(&self) -> Result<HashMap<String, ServiceState>> {
         debug!("Listing all services");
-        let response = self.connection_manager.execute_command("list").await?;
+
+        let protocol = self.get_protocol().await?;
+        let response = match protocol {
+            Protocol::JsonRpc => self.execute_command("service_list", &[], None).await?,
+            Protocol::RawCommands => self.execute_command("list", &[], None).await?,
+        };
 
         let map: HashMap<String, String> = serde_json::from_value(response)?;
         let result = map
@@ -115,13 +248,123 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Getting status for service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("status", &[service_name]);
-        let response = self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        let response = match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_status", &[], Some(params))
+                    .await?
+            }
+            Protocol::RawCommands => {
+                self.execute_command("status", &[service_name], None)
+                    .await?
+            }
+        };
 
-        let mut status: ServiceStatus = serde_json::from_value(response)?;
+        // Parse the response based on protocol
+        let status = self.parse_status_response(response, service_name).await?;
+        Ok(status)
+    }
 
-        // Convert state string to enum
-        status.state = match status.state.to_string().as_str() {
+    /// Parse status response handling different formats between protocols
+    async fn parse_status_response(
+        &self,
+        response: serde_json::Value,
+        service_name: &str,
+    ) -> Result<ServiceStatus> {
+        let protocol = self.get_protocol().await?;
+
+        match protocol {
+            Protocol::JsonRpc => {
+                // New server JSON-RPC format
+                let name = response
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(service_name)
+                    .to_string();
+
+                let pid = response.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+                let state_str = response
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown");
+
+                let target_str = response
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Down");
+
+                let after = response
+                    .get("after")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("Unknown").to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                Ok(ServiceStatus {
+                    name,
+                    pid,
+                    state: self.parse_service_state(state_str),
+                    target: self.parse_service_target(target_str),
+                    after,
+                })
+            }
+            Protocol::RawCommands => {
+                // Old server format - try direct deserialization first
+                match serde_json::from_value::<ServiceStatus>(response.clone()) {
+                    Ok(mut status) => {
+                        // Convert state and target strings to enums
+                        status.state = self.parse_service_state(&status.state.to_string());
+                        status.target = self.parse_service_target(&status.target.to_string());
+                        Ok(status)
+                    }
+                    Err(_) => {
+                        // Fallback parsing for old format
+                        let name = service_name.to_string();
+                        let pid = response.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+                        let state_str = response
+                            .get("state")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown");
+
+                        let target_str = response
+                            .get("target")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Down");
+
+                        let after = response
+                            .get("after")
+                            .and_then(|v| v.as_object())
+                            .map(|obj| {
+                                obj.iter()
+                                    .map(|(k, v)| {
+                                        (k.clone(), v.as_str().unwrap_or("Unknown").to_string())
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        Ok(ServiceStatus {
+                            name,
+                            pid,
+                            state: self.parse_service_state(state_str),
+                            target: self.parse_service_target(target_str),
+                            after,
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse service state string to enum
+    fn parse_service_state(&self, state_str: &str) -> ServiceState {
+        match state_str {
             "Unknown" => ServiceState::Unknown,
             "Blocked" => ServiceState::Blocked,
             "Spawned" => ServiceState::Spawned,
@@ -130,16 +373,16 @@ impl ZinitClient {
             "Error" => ServiceState::Error,
             "TestFailure" => ServiceState::TestFailure,
             _ => ServiceState::Unknown,
-        };
+        }
+    }
 
-        // Convert target string to enum
-        status.target = match status.target.to_string().as_str() {
+    /// Parse service target string to enum
+    fn parse_service_target(&self, target_str: &str) -> ServiceTarget {
+        match target_str {
             "Up" => ServiceTarget::Up,
             "Down" => ServiceTarget::Down,
             _ => ServiceTarget::Down,
-        };
-
-        Ok(status)
+        }
     }
 
     /// Start a service
@@ -147,8 +390,17 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Starting service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("start", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_start", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("start", &[service_name], None).await?;
+            }
+        }
 
         Ok(())
     }
@@ -158,8 +410,17 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Stopping service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("stop", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_stop", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("stop", &[service_name], None).await?;
+            }
+        }
 
         Ok(())
     }
@@ -197,8 +458,18 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Monitoring service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("monitor", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_monitor", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("monitor", &[service_name], None)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -208,8 +479,18 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Forgetting service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("forget", &[service_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_forget", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("forget", &[service_name], None)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -223,8 +504,18 @@ impl ZinitClient {
             signal_name, service_name
         );
 
-        let command = ProtocolHandler::format_command("kill", &[service_name, signal_name]);
-        self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name, signal_name]);
+                self.execute_command("service_kill", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                self.execute_command("kill", &[service_name, signal_name], None)
+                    .await?;
+            }
+        }
 
         Ok(())
     }
@@ -288,10 +579,20 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Getting raw service info for: {}", service_name);
 
-        let command = ProtocolHandler::format_command("status", &[service_name]);
-        let response = self.connection_manager.execute_command(&command).await?;
-
-        Ok(response)
+        // Use the universal interface
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                // New servers: use service_status RPC call
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_status", &[], Some(params))
+                    .await
+            }
+            Protocol::RawCommands => {
+                // Old servers: use status command
+                self.execute_command("status", &[service_name], None).await
+            }
+        }
     }
 
     /// Create a new service
@@ -303,12 +604,33 @@ impl ZinitClient {
         let service_name = name.as_ref();
         debug!("Creating service: {}", service_name);
 
-        // Convert the config to a string
-        let config_str = serde_json::to_string(&config)?;
+        // Check if the server supports dynamic service creation
+        let capabilities = self.get_capabilities().await?;
+        if !capabilities.supports_create {
+            return Err(ZinitError::FeatureNotSupported(format!(
+                "Dynamic service creation is not supported by this zinit server ({}). \
+                     Please create a service configuration file manually in /etc/zinit/{}.yaml",
+                capabilities.protocol, service_name
+            )));
+        }
 
-        // Format the command with the service name and config
-        let command = ProtocolHandler::format_command("create", &[service_name, &config_str]);
-        self.connection_manager.execute_command(&command).await?;
+        // Use the appropriate protocol
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                // New servers: use service_create RPC call
+                let params = serde_json::json!([service_name, config]);
+                self.execute_command("service_create", &[], Some(params))
+                    .await?;
+            }
+            Protocol::RawCommands => {
+                // This should not happen since we checked capabilities above,
+                // but handle it gracefully
+                return Err(ZinitError::FeatureNotSupported(
+                    "Dynamic service creation requires zinit v0.2.25+".to_string(),
+                ));
+            }
+        }
 
         Ok(())
     }
@@ -318,29 +640,61 @@ impl ZinitClient {
         let service_name = name.as_ref();
         debug!("Deleting service: {}", service_name);
 
-        // First ensure the service is stopped
-        let status = self.status(service_name).await?;
-        if status.state == ServiceState::Running || status.target == ServiceTarget::Up {
-            // Stop the service first
-            self.stop(service_name).await?;
+        // Try to get status, but don't fail if it doesn't work
+        match self.status(service_name).await {
+            Ok(status) => {
+                if status.state == ServiceState::Running || status.target == ServiceTarget::Up {
+                    // Stop the service first
+                    if let Err(e) = self.stop(service_name).await {
+                        debug!("Warning: Failed to stop service {}: {}", service_name, e);
+                    }
 
-            // Wait for the service to stop
-            let mut attempts = 0;
-            let max_attempts = 10;
+                    // Wait for the service to stop
+                    let mut attempts = 0;
+                    let max_attempts = 10;
 
-            while attempts < max_attempts {
-                let status = self.status(service_name).await?;
-                if status.pid == 0 && status.target == ServiceTarget::Down {
-                    break;
+                    while attempts < max_attempts {
+                        match self.status(service_name).await {
+                            Ok(status) => {
+                                if status.pid == 0 && status.target == ServiceTarget::Down {
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                // If status fails, assume service is stopped
+                                break;
+                            }
+                        }
+
+                        attempts += 1;
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
                 }
-
-                attempts += 1;
-                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            Err(e) => {
+                debug!("Warning: Could not get status for {}: {}", service_name, e);
+                // Continue with deletion anyway
             }
         }
 
-        // Now forget the service
+        // Now forget the service and delete the config file
         self.forget(service_name).await?;
+
+        // For new servers, also delete the service configuration file
+        let protocol = self.get_protocol().await?;
+        if let Protocol::JsonRpc = protocol {
+            let params = serde_json::json!([service_name]);
+            if let Err(e) = self
+                .execute_command("service_delete", &[], Some(params))
+                .await
+            {
+                debug!(
+                    "Warning: Could not delete service config file for {}: {}",
+                    service_name, e
+                );
+                // Don't fail the whole operation if config file deletion fails
+            }
+        }
 
         Ok(())
     }
@@ -371,6 +725,6 @@ fn parse_log_line(line: &str, filter: &Option<String>) -> Option<LogEntry> {
     Some(LogEntry {
         timestamp,
         service: service.to_string(),
-        message: format!("[{}] {}", level, message),
+        message: format!("[{level}] {message}"),
     })
 }

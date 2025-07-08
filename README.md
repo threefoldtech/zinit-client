@@ -44,7 +44,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-zinit-client = "0.3.0"
+zinit-client = "0.4.0"
 ```
 
 ## Quick Start

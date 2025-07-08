@@ -249,13 +249,123 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Getting status for service: {}", service_name);
 
-        let command = ProtocolHandler::format_command("status", &[service_name]);
-        let response = self.connection_manager.execute_command(&command).await?;
+        let protocol = self.get_protocol().await?;
+        let response = match protocol {
+            Protocol::JsonRpc => {
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_status", &[], Some(params))
+                    .await?
+            }
+            Protocol::RawCommands => {
+                self.execute_command("status", &[service_name], None)
+                    .await?
+            }
+        };
 
-        let mut status: ServiceStatus = serde_json::from_value(response)?;
+        // Parse the response based on protocol
+        let status = self.parse_status_response(response, service_name).await?;
+        Ok(status)
+    }
 
-        // Convert state string to enum
-        status.state = match status.state.to_string().as_str() {
+    /// Parse status response handling different formats between protocols
+    async fn parse_status_response(
+        &self,
+        response: serde_json::Value,
+        service_name: &str,
+    ) -> Result<ServiceStatus> {
+        let protocol = self.get_protocol().await?;
+
+        match protocol {
+            Protocol::JsonRpc => {
+                // New server JSON-RPC format
+                let name = response
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(service_name)
+                    .to_string();
+
+                let pid = response.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+                let state_str = response
+                    .get("state")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown");
+
+                let target_str = response
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Down");
+
+                let after = response
+                    .get("after")
+                    .and_then(|v| v.as_object())
+                    .map(|obj| {
+                        obj.iter()
+                            .map(|(k, v)| (k.clone(), v.as_str().unwrap_or("Unknown").to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                Ok(ServiceStatus {
+                    name,
+                    pid,
+                    state: self.parse_service_state(state_str),
+                    target: self.parse_service_target(target_str),
+                    after,
+                })
+            }
+            Protocol::RawCommands => {
+                // Old server format - try direct deserialization first
+                match serde_json::from_value::<ServiceStatus>(response.clone()) {
+                    Ok(mut status) => {
+                        // Convert state and target strings to enums
+                        status.state = self.parse_service_state(&status.state.to_string());
+                        status.target = self.parse_service_target(&status.target.to_string());
+                        Ok(status)
+                    }
+                    Err(_) => {
+                        // Fallback parsing for old format
+                        let name = service_name.to_string();
+                        let pid = response.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+
+                        let state_str = response
+                            .get("state")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown");
+
+                        let target_str = response
+                            .get("target")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Down");
+
+                        let after = response
+                            .get("after")
+                            .and_then(|v| v.as_object())
+                            .map(|obj| {
+                                obj.iter()
+                                    .map(|(k, v)| {
+                                        (k.clone(), v.as_str().unwrap_or("Unknown").to_string())
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        Ok(ServiceStatus {
+                            name,
+                            pid,
+                            state: self.parse_service_state(state_str),
+                            target: self.parse_service_target(target_str),
+                            after,
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse service state string to enum
+    fn parse_service_state(&self, state_str: &str) -> ServiceState {
+        match state_str {
             "Unknown" => ServiceState::Unknown,
             "Blocked" => ServiceState::Blocked,
             "Spawned" => ServiceState::Spawned,
@@ -264,16 +374,16 @@ impl ZinitClient {
             "Error" => ServiceState::Error,
             "TestFailure" => ServiceState::TestFailure,
             _ => ServiceState::Unknown,
-        };
+        }
+    }
 
-        // Convert target string to enum
-        status.target = match status.target.to_string().as_str() {
+    /// Parse service target string to enum
+    fn parse_service_target(&self, target_str: &str) -> ServiceTarget {
+        match target_str {
             "Up" => ServiceTarget::Up,
             "Down" => ServiceTarget::Down,
             _ => ServiceTarget::Down,
-        };
-
-        Ok(status)
+        }
     }
 
     /// Start a service

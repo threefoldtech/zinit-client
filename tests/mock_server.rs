@@ -166,15 +166,383 @@ impl MockZinitServer {
         reader.read_line(&mut line).await?;
         let command = line.trim();
 
-        // Process the command
-        let response = Self::process_command(command, &services);
+        // Detect protocol and process the command
+        let response = if command.starts_with('{') && command.contains("jsonrpc") {
+            // JSON-RPC protocol
+            Self::process_jsonrpc_command(command, &services)
+        } else {
+            // Raw command protocol
+            Self::process_raw_command(command, &services)
+        };
 
         // Send the response
         let mut stream = reader.into_inner();
         stream.write_all(response.as_bytes()).await?;
+        stream.write_all(b"\n").await?; // Add newline for line-based reading
         stream.flush().await?;
 
         Ok(())
+    }
+
+    /// Process JSON-RPC command
+    fn process_jsonrpc_command(
+        command: &str,
+        services: &Arc<Mutex<HashMap<String, MockService>>>,
+    ) -> String {
+        // Parse JSON-RPC request
+        let request: serde_json::Value = match serde_json::from_str(command) {
+            Ok(req) => req,
+            Err(_) => {
+                return serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": {
+                        "code": -32700,
+                        "message": "Parse error"
+                    }
+                })
+                .to_string();
+            }
+        };
+
+        let method = request["method"].as_str().unwrap_or("");
+        let params = request["params"].as_array();
+        let id = request["id"].clone();
+
+        let result =
+            match method {
+                "service_list" => {
+                    let services_lock = services.lock().unwrap();
+                    let mut map = HashMap::new();
+                    for (name, service) in services_lock.iter() {
+                        map.insert(name.clone(), service.state.to_string());
+                    }
+                    serde_json::to_value(map).unwrap()
+                }
+                "service_status" => {
+                    if let Some(params) = params {
+                        if let Some(service_name) = params.get(0).and_then(|v| v.as_str()) {
+                            let services_lock = services.lock().unwrap();
+                            match services_lock.get(service_name) {
+                                Some(service) => serde_json::json!({
+                                    "name": service.name,
+                                    "pid": service.pid,
+                                    "state": service.state.to_string(),
+                                    "target": service.target.to_string(),
+                                    "after": service.after
+                                }),
+                                None => {
+                                    return serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": {
+                                        "code": -32602,
+                                        "message": format!("Service '{}' not found", service_name)
+                                    }
+                                })
+                                .to_string();
+                                }
+                            }
+                        } else {
+                            return serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": "Invalid parameters"
+                                }
+                            })
+                            .to_string();
+                        }
+                    } else {
+                        return serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Missing parameters"
+                            }
+                        })
+                        .to_string();
+                    }
+                }
+                "service_create" => {
+                    if let Some(params) = params {
+                        if params.len() >= 2 {
+                            if let (Some(name), Some(_config)) =
+                                (params.get(0).and_then(|v| v.as_str()), params.get(1))
+                            {
+                                let mut services_lock = services.lock().unwrap();
+
+                                // Check if service already exists
+                                if services_lock.contains_key(name) {
+                                    return serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "error": {
+                                            "code": -32007,
+                                            "message": format!("Service '{}' already exists", name)
+                                        }
+                                    })
+                                    .to_string();
+                                }
+
+                                let service = MockService {
+                                    name: name.to_string(),
+                                    pid: 0,
+                                    state: MockServiceState::Unknown,
+                                    target: MockServiceTarget::Down,
+                                    after: HashMap::new(),
+                                };
+                                services_lock.insert(name.to_string(), service);
+                                serde_json::json!(format!(
+                                    "Service '{}' created successfully",
+                                    name
+                                ))
+                            } else {
+                                return serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": {
+                                        "code": -32602,
+                                        "message": "Invalid parameters"
+                                    }
+                                })
+                                .to_string();
+                            }
+                        } else {
+                            return serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": "Insufficient parameters"
+                                }
+                            })
+                            .to_string();
+                        }
+                    } else {
+                        return serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Missing parameters"
+                            }
+                        })
+                        .to_string();
+                    }
+                }
+                "service_start" => {
+                    if let Some(params) = params {
+                        if let Some(service_name) = params.get(0).and_then(|v| v.as_str()) {
+                            let mut services_lock = services.lock().unwrap();
+                            match services_lock.get_mut(service_name) {
+                                Some(service) => {
+                                    service.target = MockServiceTarget::Up;
+                                    if service.state != MockServiceState::Running {
+                                        service.state = MockServiceState::Running;
+                                        service.pid = 1000 + (rand::random::<u32>() % 9000);
+                                    }
+                                    serde_json::json!({"success": true})
+                                }
+                                None => {
+                                    return serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": {
+                                        "code": -32602,
+                                        "message": format!("Service '{}' not found", service_name)
+                                    }
+                                }).to_string();
+                                }
+                            }
+                        } else {
+                            return serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": "Invalid parameters"
+                                }
+                            })
+                            .to_string();
+                        }
+                    } else {
+                        return serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Missing parameters"
+                            }
+                        })
+                        .to_string();
+                    }
+                }
+                "service_stop" => {
+                    if let Some(params) = params {
+                        if let Some(service_name) = params.get(0).and_then(|v| v.as_str()) {
+                            let mut services_lock = services.lock().unwrap();
+                            match services_lock.get_mut(service_name) {
+                                Some(service) => {
+                                    service.target = MockServiceTarget::Down;
+                                    if service.state == MockServiceState::Running {
+                                        service.state = MockServiceState::Success;
+                                        service.pid = 0;
+                                    }
+                                    serde_json::json!({"success": true})
+                                }
+                                None => {
+                                    return serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": {
+                                        "code": -32602,
+                                        "message": format!("Service '{}' not found", service_name)
+                                    }
+                                }).to_string();
+                                }
+                            }
+                        } else {
+                            return serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": "Invalid parameters"
+                                }
+                            })
+                            .to_string();
+                        }
+                    } else {
+                        return serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Missing parameters"
+                            }
+                        })
+                        .to_string();
+                    }
+                }
+                "service_forget" => {
+                    if let Some(params) = params {
+                        if let Some(service_name) = params.get(0).and_then(|v| v.as_str()) {
+                            let mut services_lock = services.lock().unwrap();
+                            match services_lock.get(service_name) {
+                                Some(service) => {
+                                    if service.target == MockServiceTarget::Up || service.pid != 0 {
+                                        return serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "error": {
+                                            "code": -32602,
+                                            "message": format!("Service '{}' is up", service_name)
+                                        }
+                                    }).to_string();
+                                    } else {
+                                        services_lock.remove(service_name);
+                                        serde_json::json!({"success": true})
+                                    }
+                                }
+                                None => {
+                                    return serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": {
+                                        "code": -32602,
+                                        "message": format!("Service '{}' not found", service_name)
+                                    }
+                                }).to_string();
+                                }
+                            }
+                        } else {
+                            return serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": "Invalid parameters"
+                                }
+                            })
+                            .to_string();
+                        }
+                    } else {
+                        return serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Missing parameters"
+                            }
+                        })
+                        .to_string();
+                    }
+                }
+                "service_delete" => {
+                    if let Some(params) = params {
+                        if let Some(service_name) = params.get(0).and_then(|v| v.as_str()) {
+                            let mut services_lock = services.lock().unwrap();
+                            match services_lock.get(service_name) {
+                                Some(_) => {
+                                    services_lock.remove(service_name);
+                                    serde_json::json!({"success": true})
+                                }
+                                None => {
+                                    return serde_json::json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "error": {
+                                        "code": -32602,
+                                        "message": format!("Service '{}' not found", service_name)
+                                    }
+                                }).to_string();
+                                }
+                            }
+                        } else {
+                            return serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": "Invalid parameters"
+                                }
+                            })
+                            .to_string();
+                        }
+                    } else {
+                        return serde_json::json!({
+                            "jsonrpc": "2.0",
+                            "id": id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Missing parameters"
+                            }
+                        })
+                        .to_string();
+                    }
+                }
+                _ => {
+                    return serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "error": {
+                            "code": -32601,
+                            "message": "Method not found"
+                        }
+                    })
+                    .to_string();
+                }
+            };
+
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result
+        })
+        .to_string()
     }
 
     /// Handle create command specially to parse JSON configuration
@@ -212,21 +580,18 @@ impl MockZinitServer {
                         };
 
                         services_lock.insert(service_name.to_string(), service);
-                        r#"{"state":"ok","body":null}"#.to_string()
+                        r#"{"success":true}"#.to_string()
                     }
-                    Err(_) => {
-                        r#"{"state":"error","body":"invalid service configuration"}"#.to_string()
-                    }
+                    Err(_) => r#"{"error":"invalid service configuration"}"#.to_string(),
                 }
             }
         } else {
-            r#"{"state":"error","body":"unknown command 'create' or wrong arguments count"}"#
-                .to_string()
+            r#"{"error":"unknown command 'create' or wrong arguments count"}"#.to_string()
         }
     }
 
-    /// Process a command and generate a response
-    fn process_command(
+    /// Process a raw command and generate a response
+    fn process_raw_command(
         command: &str,
         services: &Arc<Mutex<HashMap<String, MockService>>>,
     ) -> String {
@@ -238,7 +603,7 @@ impl MockZinitServer {
         let parts: Vec<&str> = command.split_whitespace().collect();
 
         if parts.is_empty() {
-            return r#"{"state":"error","body":"unknown command"}"#.to_string();
+            return r#"{"error":"unknown command"}"#.to_string();
         }
 
         match parts[0] {
@@ -250,8 +615,7 @@ impl MockZinitServer {
                     map.insert(name.clone(), service.state.to_string());
                 }
 
-                let body = serde_json::to_value(map).unwrap();
-                format!(r#"{{"state":"ok","body":{}}}"#, body)
+                serde_json::to_string(&map).unwrap()
             }
             "status" if parts.len() == 2 => {
                 let service_name = parts[1];
@@ -267,13 +631,10 @@ impl MockZinitServer {
                             "after": service.after
                         });
 
-                        format!(r#"{{"state":"ok","body":{}}}"#, status)
+                        serde_json::to_string(&status).unwrap()
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service name \"{}\" unknown"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service name \"{}\" unknown"}}"#, service_name)
                     }
                 }
             }
@@ -288,13 +649,10 @@ impl MockZinitServer {
                             service.state = MockServiceState::Running;
                             service.pid = 1000 + rand::random::<u32>() % 9000;
                         }
-                        r#"{"state":"ok","body":null}"#.to_string()
+                        r#"{"success":true}"#.to_string()
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service name \"{}\" unknown"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service name \"{}\" unknown"}}"#, service_name)
                     }
                 }
             }
@@ -309,13 +667,10 @@ impl MockZinitServer {
                             service.state = MockServiceState::Success;
                             service.pid = 0;
                         }
-                        r#"{"state":"ok","body":null}"#.to_string()
+                        r#"{"success":true}"#.to_string()
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service name \"{}\" unknown"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service name \"{}\" unknown"}}"#, service_name)
                     }
                 }
             }
@@ -325,7 +680,7 @@ impl MockZinitServer {
 
                 if services_lock.contains_key(service_name) {
                     format!(
-                        r#"{{"state":"error","body":"service \"{}\" already monitored"}}"#,
+                        r#"{{"error":"service \"{}\" already monitored"}}"#,
                         service_name
                     )
                 } else {
@@ -341,7 +696,7 @@ impl MockZinitServer {
                     };
 
                     services_lock.insert(service_name.to_string(), service);
-                    r#"{"state":"ok","body":null}"#.to_string()
+                    r#"{"success":true}"#.to_string()
                 }
             }
             "forget" if parts.len() == 2 => {
@@ -351,20 +706,14 @@ impl MockZinitServer {
                 match services_lock.get(service_name) {
                     Some(service) => {
                         if service.target == MockServiceTarget::Up || service.pid != 0 {
-                            format!(
-                                r#"{{"state":"error","body":"service \"{}\" is up"}}"#,
-                                service_name
-                            )
+                            format!(r#"{{"error":"service \"{}\" is up"}}"#, service_name)
                         } else {
                             services_lock.remove(service_name);
-                            r#"{"state":"ok","body":null}"#.to_string()
+                            r#"{"success":true}"#.to_string()
                         }
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service name \"{}\" unknown"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service name \"{}\" unknown"}}"#, service_name)
                     }
                 }
             }
@@ -376,24 +725,18 @@ impl MockZinitServer {
                 match services_lock.get_mut(service_name) {
                     Some(service) => {
                         if service.pid == 0 {
-                            format!(
-                                r#"{{"state":"error","body":"service \"{}\" is down"}}"#,
-                                service_name
-                            )
+                            format!(r#"{{"error":"service \"{}\" is down"}}"#, service_name)
                         } else {
                             // Simulate the effect of the signal
                             if signal == "SIGKILL" || signal == "SIGTERM" {
                                 service.state = MockServiceState::Success;
                                 service.pid = 0;
                             }
-                            r#"{"state":"ok","body":null}"#.to_string()
+                            r#"{"success":true}"#.to_string()
                         }
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service name \"{}\" unknown"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service name \"{}\" unknown"}}"#, service_name)
                     }
                 }
             }
@@ -412,13 +755,10 @@ impl MockZinitServer {
                             "after": service.after
                         });
 
-                        format!(r#"{{"state":"ok","body":{}}}"#, service_info)
+                        serde_json::to_string(&service_info).unwrap()
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service \"{}\" not found"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service \"{}\" not found"}}"#, service_name)
                     }
                 }
             }
@@ -431,13 +771,10 @@ impl MockZinitServer {
                         // In real Zinit, delete stops the service first if it's running
                         // For simplicity, we'll just remove it regardless of state
                         services_lock.remove(service_name);
-                        r#"{"state":"ok","body":null}"#.to_string()
+                        r#"{"success":true}"#.to_string()
                     }
                     None => {
-                        format!(
-                            r#"{{"state":"error","body":"service \"{}\" not found"}}"#,
-                            service_name
-                        )
+                        format!(r#"{{"error":"service \"{}\" not found"}}"#, service_name)
                     }
                 }
             }
@@ -447,7 +784,7 @@ impl MockZinitServer {
             }
             _ => {
                 format!(
-                    r#"{{"state":"error","body":"unknown command '{}' or wrong arguments count"}}"#,
+                    r#"{{"error":"unknown command '{}' or wrong arguments count"}}"#,
                     parts[0]
                 )
             }

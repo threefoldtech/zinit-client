@@ -145,8 +145,7 @@ impl ZinitClient {
             }
             Err(e) => {
                 return Err(ZinitError::ProtocolDetectionFailed(format!(
-                    "Failed to detect protocol: {}",
-                    e
+                    "Failed to detect protocol: {e}"
                 )));
             }
         }
@@ -580,10 +579,20 @@ impl ZinitClient {
         let service_name = service.as_ref();
         debug!("Getting raw service info for: {}", service_name);
 
-        let command = ProtocolHandler::format_command("status", &[service_name]);
-        let response = self.connection_manager.execute_command(&command).await?;
-
-        Ok(response)
+        // Use the universal interface
+        let protocol = self.get_protocol().await?;
+        match protocol {
+            Protocol::JsonRpc => {
+                // New servers: use service_status RPC call
+                let params = serde_json::json!([service_name]);
+                self.execute_command("service_status", &[], Some(params))
+                    .await
+            }
+            Protocol::RawCommands => {
+                // Old servers: use status command
+                self.execute_command("status", &[service_name], None).await
+            }
+        }
     }
 
     /// Create a new service
@@ -611,17 +620,8 @@ impl ZinitClient {
             Protocol::JsonRpc => {
                 // New servers: use service_create RPC call
                 let params = serde_json::json!([service_name, config]);
-                match self
-                    .execute_command("service_create", &[], Some(params))
-                    .await
-                {
-                    Ok(_) => {}
-                    Err(ZinitError::JsonRpcError { code: -32007, .. }) => {
-                        // Service already exists - this is OK for testing
-                        debug!("Service {} already exists, continuing", service_name);
-                    }
-                    Err(e) => return Err(e),
-                }
+                self.execute_command("service_create", &[], Some(params))
+                    .await?;
             }
             Protocol::RawCommands => {
                 // This should not happen since we checked capabilities above,
@@ -725,6 +725,6 @@ fn parse_log_line(line: &str, filter: &Option<String>) -> Option<LogEntry> {
     Some(LogEntry {
         timestamp,
         service: service.to_string(),
-        message: format!("[{}] {}", level, message),
+        message: format!("[{level}] {message}"),
     })
 }

@@ -3,7 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/zinit-client.svg)](https://crates.io/crates/zinit-client)
 [![Documentation](https://docs.rs/zinit-client/badge.svg)](https://docs.rs/zinit-client)
 
-A Rust client library for interacting with the [ZOS Init](https://github.com/threefoldtech/zinit) service manager. It provides programmatic control over service lifecycle, status queries, and management from Rust applications.
+A Rust client library for interacting with the [ZOS Init](https://github.com/threefoldtech/zos_zinit) service manager. It provides programmatic control over service lifecycle, status queries, and management from Rust applications.
 
 ## What this is
 

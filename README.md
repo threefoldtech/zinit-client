@@ -2,8 +2,6 @@
 
 [![Crates.io](https://img.shields.io/crates/v/zinit-client.svg)](https://crates.io/crates/zinit-client)
 [![Documentation](https://docs.rs/zinit-client/badge.svg)](https://docs.rs/zinit-client)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
 A Rust client library for the [Zinit](https://github.com/threefoldtech/zinit) service manager.
 
 ## Features
@@ -83,4 +81,5 @@ For detailed API documentation, visit [docs.rs/zinit-client](https://docs.rs/zin
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Copyright (c) TFTech NV.

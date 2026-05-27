@@ -1,17 +1,17 @@
-# Zinit Client
+# ZOS Init Client
 
 [![Crates.io](https://img.shields.io/crates/v/zinit-client.svg)](https://crates.io/crates/zinit-client)
 [![Documentation](https://docs.rs/zinit-client/badge.svg)](https://docs.rs/zinit-client)
 
-A Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager. It provides programmatic control over service lifecycle, status queries, and management from Rust applications.
+A Rust client library for interacting with the [ZOS Init](https://github.com/threefoldtech/zinit) service manager. It provides programmatic control over service lifecycle, status queries, and management from Rust applications.
 
 ## What this is
 
-Zinit Client is a Rust library that enables external tools to monitor and control services supervised by Zinit. It communicates with Zinit over a Unix domain socket and exposes a typed, async API for service operations. The library automatically detects server version and protocol, making it suitable for both new and legacy Zinit installations.
+ZOS Init Client is a Rust library that enables external tools to monitor and control services supervised by ZOS Init. It communicates with ZOS Init over a Unix domain socket and exposes a typed, async API for service operations. The library automatically detects server version and protocol, making it suitable for both new and legacy ZOS Init installations.
 
 ## What this repository contains
 
-- **Typed Rust client** for the Zinit Unix socket protocol
+- **Typed Rust client** for the ZOS Init Unix socket protocol
 - **Service lifecycle operations**: list, start, stop, restart, status, create, delete
 - **Async/await API** built on Tokio
 - **Strongly typed service states and responses**
@@ -20,11 +20,11 @@ Zinit Client is a Rust library that enables external tools to monitor and contro
 
 ## Role in the stack
 
-Zinit Client is used by tools and services that need to manage or observe processes supervised by Zinit. Zinit itself is a lightweight PID 1 replacement and service manager used within ZOS / Zero-OS and container environments. This client library abstracts the wire protocol so Rust applications can integrate with Zinit without dealing with raw socket communication.
+ZOS Init Client is used by tools and services that need to manage or observe processes supervised by ZOS Init. ZOS Init itself is a lightweight PID 1 replacement and service manager used within ZOS / Zero-OS and container environments. This client library abstracts the wire protocol so Rust applications can integrate with ZOS Init without dealing with raw socket communication.
 
 ## ZOS / Zero-OS
 
-ZOS, also known as Zero-OS, is the operating system layer used to run and manage nodes. It provides the low-level runtime environment for workloads, networking, storage, and automation. Zinit is the init system used by ZOS, and this client library enables ZOS components and external tooling to interact with it programmatically.
+ZOS, also known as Zero-OS, is the operating system layer used to run and manage nodes. It provides the low-level runtime environment for workloads, networking, storage, and automation. ZOS Init is the init system used by ZOS, and this client library enables ZOS components and external tooling to interact with it programmatically.
 
 ## Relation to ThreeFold
 

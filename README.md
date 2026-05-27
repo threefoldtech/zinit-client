@@ -2,16 +2,37 @@
 
 [![Crates.io](https://img.shields.io/crates/v/zinit-client.svg)](https://crates.io/crates/zinit-client)
 [![Documentation](https://docs.rs/zinit-client/badge.svg)](https://docs.rs/zinit-client)
-A Rust client library for the [Zinit](https://github.com/threefoldtech/zinit) service manager.
 
-## Features
+A Rust client library for interacting with the [Zinit](https://github.com/threefoldtech/zinit) service manager. It provides programmatic control over service lifecycle, status queries, and management from Rust applications.
 
-- **Zero Configuration**: Automatically detects server version and protocol
-- **Complete API**: All Zinit operations (list, start, stop, create, delete, etc.)
-- **Async/Await**: Built on Tokio for high performance
-- **Type Safe**: Strongly typed service states and responses
-- **Error Handling**: Comprehensive error types with helpful messages
-- **Backward Compatible**: Works with legacy Zinit installations
+## What this is
+
+Zinit Client is a Rust library that enables external tools to monitor and control services supervised by Zinit. It communicates with Zinit over a Unix domain socket and exposes a typed, async API for service operations. The library automatically detects server version and protocol, making it suitable for both new and legacy Zinit installations.
+
+## What this repository contains
+
+- **Typed Rust client** for the Zinit Unix socket protocol
+- **Service lifecycle operations**: list, start, stop, restart, status, create, delete
+- **Async/await API** built on Tokio
+- **Strongly typed service states and responses**
+- **Comprehensive error types** with helpful messages
+- **Examples** demonstrating common usage patterns
+
+## Role in the stack
+
+Zinit Client is used by tools and services that need to manage or observe processes supervised by Zinit. Zinit itself is a lightweight PID 1 replacement and service manager used within ZOS / Zero-OS and container environments. This client library abstracts the wire protocol so Rust applications can integrate with Zinit without dealing with raw socket communication.
+
+## ZOS / Zero-OS
+
+ZOS, also known as Zero-OS, is the operating system layer used to run and manage nodes. It provides the low-level runtime environment for workloads, networking, storage, and automation. Zinit is the init system used by ZOS, and this client library enables ZOS components and external tooling to interact with it programmatically.
+
+## Relation to ThreeFold
+
+This technology is used within the ThreeFold ecosystem and was first deployed on the ThreeFold Grid. The component itself is designed as reusable infrastructure technology and should be understood by its technical function first, independent of any specific deployment.
+
+## Ownership
+
+This repository is owned and maintained by TF-Tech NV, a Belgian company responsible for the development and maintenance of this technology.
 
 ## Installation
 
@@ -82,4 +103,4 @@ For detailed API documentation, visit [docs.rs/zinit-client](https://docs.rs/zin
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-Copyright (c) TFTech NV.
+Copyright (c) TF-Tech NV.
